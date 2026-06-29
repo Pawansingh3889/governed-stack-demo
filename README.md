@@ -39,7 +39,8 @@ flowchart TD
 
 Two gates per call, on purpose. The gateway authenticates the caller (token to
 role), asks OPA whether that role may call that tool with those arguments, counts
-a per-role budget, and writes a tamper-evident audit record. Then the in-tool
+a per-role budget, writes a tamper-evident audit record, and exports the decision
+as an OpenTelemetry span. Then the in-tool
 gates run underneath (no run_sql, mutations refused, PII redacted), so even a
 policy mistake cannot let a tool misbehave. The loop is discover → query → KQL →
 docs → remember. Nothing leaves the machine, and any backend swaps in `stack.env`

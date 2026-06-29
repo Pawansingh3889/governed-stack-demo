@@ -46,7 +46,21 @@ than competing with it.
   an ok/degraded/failing status. The agent runs the declared checks; it cannot
   invent new ones. Tier 1 is now complete.
 
-### Tier 2 — strengthens, already planned
+### Tier 2 — infrastructure and distribution
+
+- **OpenTelemetry audit export. (done)** The gateway emits every decision
+  (allow / deny / unauthenticated) as an OTel span with role, tool, decision,
+  and reason. With `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans ship to a collector
+  (Jaeger, Tempo); blank writes them to `logs/otel-spans.jsonl`. agent-blackbox
+  stays the tamper-evident record; OTel is the interoperable export.
+- **Headless packaging (systemd / Docker).** Run the stack as a permanent
+  on-prem service rather than `stack.py` by hand. Still open; Docker is currently
+  broken on the dev machine (Model Runner bug), systemd is Linux-only.
+- **Inference speed.** Reframed: vLLM needs a GPU the dev laptop does not have,
+  so it would not help. The real fix is a smaller tool-capable model (mistral) or
+  llama-swap. Treat the chat as garnish; `stack.py verify` is the fast proof.
+
+### Tier 2 backlog — strengthens, already planned
 
 - **pgvector for doc-steward and thread-recall.** Move off the hashing and
   in-memory defaults to persistent semantic backends. Reuses Postgres.

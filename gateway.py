@@ -44,6 +44,42 @@ def _load_tokens() -> dict[str, str]:
 TOKENS = _load_tokens()
 _spent: dict[str, int] = defaultdict(int)
 
+
+def _setup_tracing():
+    """Export every governance decision as an OpenTelemetry span.
+
+    With OTEL_EXPORTER_OTLP_ENDPOINT set, spans go to a real collector (Jaeger,
+    Grafana Tempo, an OTLP gateway). Without it, they are written as JSON lines to
+    OTEL_SPAN_FILE so the export is visible with no collector to stand up. This is
+    the interoperable trail; agent-blackbox remains the tamper-evident one.
+    """
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+    provider = TracerProvider(resource=Resource.create({"service.name": "governed-gateway"}))
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    if endpoint:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")))
+    else:
+        path = os.environ.get("OTEL_SPAN_FILE", "logs/otel-spans.jsonl")
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        out = open(path, "a", encoding="utf-8")
+        provider.add_span_processor(
+            SimpleSpanProcessor(ConsoleSpanExporter(out=out, formatter=lambda s: s.to_json(indent=None) + "\n"))
+        )
+    trace.set_tracer_provider(provider)
+    return trace.get_tracer("governed-gateway")
+
+
+tracer = _setup_tracing()
+
 app = FastAPI(title="governance-gateway")
 client = httpx.AsyncClient(timeout=30.0)
 
@@ -84,38 +120,50 @@ async def _decide(role: str, server: str, tool: str, args: dict) -> dict:
 
 @app.post("/{server}/{tool}")
 async def call_tool(server: str, tool: str, request: Request):
-    role = _role(request)
-    if role is None:
-        return JSONResponse({"detail": "unauthenticated: provide a valid token"}, status_code=401)
+    with tracer.start_as_current_span(f"{server}/{tool}") as span:
+        span.set_attribute("gov.server", server)
+        span.set_attribute("gov.tool", tool)
 
-    body = await request.body()
-    try:
-        args = json.loads(body) if body else {}
-    except Exception:
-        args = {}
+        role = _role(request)
+        span.set_attribute("gov.role", role or "anonymous")
+        if role is None:
+            span.set_attribute("gov.decision", "unauthenticated")
+            return JSONResponse({"detail": "unauthenticated: provide a valid token"}, status_code=401)
 
-    if _spent[role] >= BUDGET:
-        _audit(role, server, tool, "deny", "budget exceeded")
-        return JSONResponse({"detail": f"role '{role}' budget exceeded"}, status_code=429)
+        body = await request.body()
+        try:
+            args = json.loads(body) if body else {}
+        except Exception:
+            args = {}
 
-    decision = await _decide(role, server, tool, args)
-    if not decision.get("allow"):
-        _audit(role, server, tool, "deny", decision.get("reason", ""))
-        return JSONResponse(
-            {"detail": f"denied by policy: {decision.get('reason')}", "policy": decision},
-            status_code=403,
+        if _spent[role] >= BUDGET:
+            span.set_attribute("gov.decision", "deny")
+            span.set_attribute("gov.reason", "budget exceeded")
+            _audit(role, server, tool, "deny", "budget exceeded")
+            return JSONResponse({"detail": f"role '{role}' budget exceeded"}, status_code=429)
+
+        decision = await _decide(role, server, tool, args)
+        if not decision.get("allow"):
+            span.set_attribute("gov.decision", "deny")
+            span.set_attribute("gov.reason", decision.get("reason", ""))
+            _audit(role, server, tool, "deny", decision.get("reason", ""))
+            return JSONResponse(
+                {"detail": f"denied by policy: {decision.get('reason')}", "policy": decision},
+                status_code=403,
+            )
+
+        _spent[role] += 1
+        resp = await client.post(
+            f"{MCPO}/{server}/{tool}", content=body, headers={"content-type": "application/json"}
         )
-
-    _spent[role] += 1
-    resp = await client.post(
-        f"{MCPO}/{server}/{tool}", content=body, headers={"content-type": "application/json"}
-    )
-    _audit(role, server, tool, "allow", "forwarded", status=resp.status_code)
-    return Response(
-        content=resp.content,
-        status_code=resp.status_code,
-        media_type=resp.headers.get("content-type", "application/json"),
-    )
+        span.set_attribute("gov.decision", "allow")
+        span.set_attribute("http.status_code", resp.status_code)
+        _audit(role, server, tool, "allow", "forwarded", status=resp.status_code)
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
 
 
 @app.get("/{path:path}")

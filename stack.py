@@ -230,6 +230,8 @@ def cmd_up(args: argparse.Namespace) -> int:
                 "GATEWAY_TOKENS": cfg.get("GATEWAY_TOKENS", ""),
                 "GATEWAY_BUDGET": cfg.get("GATEWAY_BUDGET", "500"),
                 "GATEWAY_AUDIT_DB": f"{ROOT.as_posix()}/logs/gateway-audit.db",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": cfg.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+                "OTEL_SPAN_FILE": f"{ROOT.as_posix()}/logs/otel-spans.jsonl",
             },
         )
         print(f"Starting gateway on {base} (auth + OPA policy) ...")
@@ -339,6 +341,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
         text = " ".join(r["content"] for r in (rec or {}).get("results", []))
         check("thread-recall masks PII on write", (rec or {}).get("count", 0) > 0 and "@example.com" not in text)
         call("/thread-recall/forget", {"thread_id": tid})
+
+    span_file = ROOT / "logs" / "otel-spans.jsonl"
+    otel_ok = span_file.exists() and '"gov.decision"' in span_file.read_text(encoding="utf-8")
+    check("gateway exports OpenTelemetry spans for decisions", otel_ok)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
