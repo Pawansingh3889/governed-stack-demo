@@ -95,6 +95,20 @@ def render_config(cfg: dict[str, str]) -> Path:
             "args": ["-m", "schema_scout.mcp_server", "--catalog", catalog],
         }
 
+    # thread-recall (governed memory) is optional: enabled when a DB path is set.
+    tr_db = cfg.get("THREAD_RECALL_DB", "")
+    if tr_db:
+        tr_env = {"THREAD_RECALL_DB": tr_db, "THREAD_RECALL_MASK": cfg.get("THREAD_RECALL_MASK", "1")}
+        if cfg.get("THREAD_RECALL_EMBED", "hashing").lower() == "ollama":
+            tr_env["THREAD_RECALL_EMBED"] = "ollama"
+            tr_env["THREAD_RECALL_OLLAMA_HOST"] = cfg.get("DOC_STEWARD_OLLAMA_HOST", "http://localhost:11434")
+            tr_env["THREAD_RECALL_OLLAMA_MODEL"] = cfg.get("DOC_STEWARD_OLLAMA_MODEL", "nomic-embed-text")
+        servers["thread-recall"] = {
+            "command": py,
+            "args": ["-m", "thread_recall.mcp_server"],
+            "env": tr_env,
+        }
+
     CONFIG_FILE.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
     return CONFIG_FILE
 
@@ -217,6 +231,9 @@ def _print_backends(cfg: dict[str, str]) -> None:
     catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
     if catalog and Path(catalog).exists():
         print("  schema-scout: catalog discovery")
+    if cfg.get("THREAD_RECALL_DB"):
+        mask = "masked" if cfg.get("THREAD_RECALL_MASK", "1").lower() in ("1", "true", "yes", "on") else "unmasked"
+        print(f"  thread-recall: SQLite memory ({mask} on write)")
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -266,6 +283,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if catalog and Path(catalog).exists():
         tables = call(base, "/schema-scout/list_tables", {})
         check("schema-scout lists catalog tables", isinstance(tables, list) and len(tables) > 0)
+
+    if cfg.get("THREAD_RECALL_DB"):
+        tid = "verify-check"
+        call(base, "/thread-recall/remember", {"thread_id": tid, "content": "reach me at zoe@example.com about Pro"})
+        rec = call(base, "/thread-recall/recall", {"thread_id": tid, "query": "contact details", "k": 3})
+        text = " ".join(r["content"] for r in rec["results"])
+        check("thread-recall masks PII on write", rec["count"] > 0 and "@example.com" not in text)
+        call(base, "/thread-recall/forget", {"thread_id": tid})
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

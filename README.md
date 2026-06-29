@@ -14,6 +14,7 @@ surface:
 | kql-sop | KQL | A gatekeeper lints before it runs. A query that mutates data or schema, or otherwise trips a blocking rule, is never executed. |
 | doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted in the text before the model reads it. |
 | schema-scout | Schema discovery | Read-only catalog tools (list tables, describe, find join paths) over a generated catalog, with PII flagged per column. Optional; enabled when a catalog is present. |
+| thread-recall | Memory | Thread-scoped remember/recall. PII is masked before anything is stored, so long-term memory never retains raw PII, and one thread never recalls another's turns. Optional. |
 
 The three are wired into [Open WebUI](https://github.com/open-webui/open-webui)
 through [mcpo](https://github.com/open-webui/mcpo), which exposes each MCP server
