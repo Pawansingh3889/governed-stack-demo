@@ -26,14 +26,11 @@ Write-Host "Installing the three servers + mcpo..." -ForegroundColor Cyan
 & $venvPy -m pip install --quiet --upgrade pip @trusted
 & $venvPy -m pip install --quiet @trusted -e $sqlSteward -e $kqlSop -e $docSteward mcpo
 
-Write-Host "Seeding the sample database..." -ForegroundColor Cyan
-& $venvPy "$root\data\sql\build_demo_db.py"
-
-Write-Host "Rendering mcpo.config.json..." -ForegroundColor Cyan
-& $venvPy "$root\scripts\render_mcpo_config.py"
-
 Write-Host ""
-Write-Host "Setup complete." -ForegroundColor Green
-Write-Host "  Verify governance:  .\.venv\Scripts\python.exe verify.py"
-Write-Host "  Start the gateway:  .\.venv\Scripts\mcpo.exe --config mcpo.config.json --port 8765"
-Write-Host "  Start Open WebUI:   docker compose up -d   (then http://localhost:3000)"
+Write-Host "Setup complete. The venv is ready; stack.py drives everything from here." -ForegroundColor Green
+Write-Host "  Start the gateway:  .\.venv\Scripts\python.exe stack.py up"
+Write-Host "  Check / verify:     .\.venv\Scripts\python.exe stack.py status   (and: verify)"
+Write-Host "  Full chat UI:       .\.venv\Scripts\python.exe stack.py up --webui   (no Docker)"
+Write-Host "  Stop:               .\.venv\Scripts\python.exe stack.py down"
+Write-Host ""
+Write-Host "To point a tool at real infra, copy stack.env.example to stack.env and edit it."
