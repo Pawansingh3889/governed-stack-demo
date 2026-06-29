@@ -1,0 +1,86 @@
+<svg viewBox="0 0 1120 610" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif">
+  <title>Governed Agent Stack architecture</title>
+  <desc>A dark architecture poster. Title Governed Agent Stack, tagline governance that lives in the tool. Five workload tiles — schema-scout (discover), sql-steward (query), kql-sop (KQL), doc-steward (documents), thread-recall (memory). A foundation bar labelled Governed Platform holds Open WebUI plus Ollama, a governance gateway (auth, OPA/Rego, audit), and the governance internals query-warden, pii-veil, agent-blackbox.</desc>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5eead4"/><stop offset="0.4" stop-color="#60a5fa"/><stop offset="0.7" stop-color="#a78bfa"/><stop offset="1" stop-color="#f0abfc"/>
+    </linearGradient>
+    <linearGradient id="g-teal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#0ea5a3"/></linearGradient>
+    <linearGradient id="g-blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#2563eb"/></linearGradient>
+    <linearGradient id="g-red"  x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb7185"/><stop offset="1" stop-color="#e11d48"/></linearGradient>
+    <linearGradient id="g-pur"  x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="g-grn"  x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86efac"/><stop offset="1" stop-color="#16a34a"/></linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="610" rx="26" fill="#060608"/>
+  <rect x="6" y="6" width="1108" height="598" rx="22" fill="#0a0a0c" stroke="url(#brand)" stroke-width="2"/>
+
+  <g transform="translate(560,40)">
+    <path d="M0 -16 L15 -9 L15 6 Q15 18 0 24 Q-15 18 -15 6 L-15 -9 Z" fill="none" stroke="url(#brand)" stroke-width="2"/>
+    <rect x="-6" y="-2" width="12" height="11" rx="2" fill="url(#brand)"/>
+    <path d="M-3 -2 V-6 a3 3 0 0 1 6 0 V-2" fill="none" stroke="#0a0a0c" stroke-width="1.6"/>
+  </g>
+
+  <text x="560" y="135" text-anchor="middle" font-size="54" font-weight="800" fill="#ffffff" letter-spacing="0.5">Governed Agent Stack</text>
+  <text x="560" y="180" text-anchor="middle" font-size="26" font-weight="700" fill="url(#brand)">Governance that lives in the tool, not around it</text>
+
+  <g>
+    <rect x="149" y="232" width="150" height="196" rx="16" fill="#141417" stroke="#26262b" stroke-width="1"/>
+    <g transform="translate(224,300)">
+      <rect x="-20" y="-20" width="17" height="17" rx="3" fill="url(#g-teal)"/><rect x="3" y="-20" width="17" height="17" rx="3" fill="url(#g-teal)" opacity="0.6"/>
+      <rect x="-20" y="3" width="17" height="17" rx="3" fill="url(#g-teal)" opacity="0.6"/><rect x="3" y="3" width="17" height="17" rx="3" fill="url(#g-teal)"/>
+    </g>
+    <text x="224" y="392" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">schema-scout</text>
+    <text x="224" y="414" text-anchor="middle" font-size="13" fill="#9a9aa3">Discover</text>
+
+    <rect x="317" y="232" width="150" height="196" rx="16" fill="#141417" stroke="#26262b" stroke-width="1"/>
+    <g transform="translate(392,300)">
+      <ellipse cx="0" cy="-18" rx="18" ry="6" fill="url(#g-blue)"/><path d="M-18 -18 V14 a18 6 0 0 0 36 0 V-18" fill="url(#g-blue)" opacity="0.85"/><ellipse cx="0" cy="-2" rx="18" ry="6" fill="#141417" opacity="0.35"/>
+    </g>
+    <text x="392" y="392" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">sql-steward</text>
+    <text x="392" y="414" text-anchor="middle" font-size="13" fill="#9a9aa3">Query</text>
+
+    <rect x="485" y="232" width="150" height="196" rx="16" fill="#141417" stroke="#26262b" stroke-width="1"/>
+    <g transform="translate(560,300)"><path d="M4 -22 L-14 4 L-1 4 L-4 22 L14 -4 L1 -4 Z" fill="url(#g-red)"/></g>
+    <text x="560" y="392" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">kql-sop</text>
+    <text x="560" y="414" text-anchor="middle" font-size="13" fill="#9a9aa3">KQL</text>
+
+    <rect x="653" y="232" width="150" height="196" rx="16" fill="#141417" stroke="#26262b" stroke-width="1"/>
+    <g transform="translate(728,300)">
+      <rect x="-15" y="-20" width="30" height="40" rx="4" fill="url(#g-pur)"/><line x1="-9" y1="-10" x2="9" y2="-10" stroke="#141417" stroke-width="2.4"/><line x1="-9" y1="-2" x2="9" y2="-2" stroke="#141417" stroke-width="2.4"/><line x1="-9" y1="6" x2="3" y2="6" stroke="#141417" stroke-width="2.4"/>
+    </g>
+    <text x="728" y="392" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">doc-steward</text>
+    <text x="728" y="414" text-anchor="middle" font-size="13" fill="#9a9aa3">Documents</text>
+
+    <rect x="821" y="232" width="150" height="196" rx="16" fill="#141417" stroke="#26262b" stroke-width="1"/>
+    <g transform="translate(896,300)"><path d="M-18 6 L0 -4 L18 6 L0 16 Z" fill="url(#g-grn)"/><path d="M-18 -4 L0 -14 L18 -4 L0 6 Z" fill="url(#g-grn)" opacity="0.7"/></g>
+    <text x="896" y="392" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">thread-recall</text>
+    <text x="896" y="414" text-anchor="middle" font-size="13" fill="#9a9aa3">Memory</text>
+  </g>
+
+  <text x="560" y="470" text-anchor="middle" font-size="13" font-weight="700" fill="#cfcfd6" letter-spacing="2">GOVERNED PLATFORM</text>
+  <rect x="120" y="486" width="880" height="98" rx="18" fill="#101013" stroke="#26262b" stroke-width="1"/>
+
+  <g transform="translate(0,535)">
+    <g transform="translate(255,0)">
+      <path d="M-22 -10 h26 a6 6 0 0 1 6 6 v8 a6 6 0 0 1 -6 6 h-14 l-10 8 v-8 h-2 a6 6 0 0 1 -6 -6 v-8 a6 6 0 0 1 6 -6 z" fill="url(#g-blue)"/>
+      <text x="22" y="-4" font-size="17" font-weight="700" fill="#ffffff">Open WebUI</text>
+      <text x="22" y="16" font-size="12" fill="#9a9aa3">agent UI · Ollama (local)</text>
+    </g>
+    <line x1="455" y1="-26" x2="455" y2="26" stroke="#2a2a30" stroke-width="1"/>
+    <g transform="translate(560,0)">
+      <path d="M0 -14 L13 -8 L13 4 Q13 15 0 21 Q-13 15 -13 4 L-13 -8 Z" fill="url(#brand)"/>
+      <rect x="-5" y="-3" width="10" height="8" rx="1.5" fill="#0a0a0c"/><path d="M-2.5 -3 V-6 a2.5 2.5 0 0 1 5 0 V-3" fill="none" stroke="#0a0a0c" stroke-width="1.3"/>
+      <text x="22" y="-4" font-size="17" font-weight="700" fill="#ffffff">Governance gateway</text>
+      <text x="22" y="16" font-size="12" fill="#9a9aa3">auth · OPA/Rego · budget · audit</text>
+    </g>
+    <line x1="760" y1="-26" x2="760" y2="26" stroke="#2a2a30" stroke-width="1"/>
+    <g transform="translate(835,0)">
+      <circle cx="-12" cy="0" r="6" fill="url(#brand)"/>
+      <circle cx="-30" cy="-11" r="3" fill="#6b7280"/><line x1="-27" y1="-9" x2="-16" y2="-3" stroke="#3a3a42" stroke-width="1.4"/>
+      <circle cx="-30" cy="11" r="3" fill="#6b7280"/><line x1="-27" y1="9" x2="-16" y2="3" stroke="#3a3a42" stroke-width="1.4"/>
+      <text x="6" y="-4" font-size="15" font-weight="700" fill="#ffffff">Governance internals</text>
+      <text x="6" y="16" font-size="11.5" fill="#9a9aa3">query-warden · pii-veil · agent-blackbox</text>
+    </g>
+  </g>
+</svg>
