@@ -1,0 +1,25 @@
+{
+  "_comment": "Template. Run scripts/render_mcpo_config.py (or setup.ps1) to write the real mcpo.config.json with __ROOT__ replaced by this folder's absolute path. mcpo on Windows needs an absolute, resolvable command path, so the relative form does not work.",
+  "mcpServers": {
+    "sql-steward": {
+      "command": "__ROOT__/.venv/Scripts/python.exe",
+      "args": ["-m", "sql_steward.server"],
+      "env": {
+        "SQL_STEWARD_LAYER": "__ROOT__/data/sql/semantic.yaml",
+        "SQL_STEWARD_DB_URL": "sqlite:///__ROOT__/data/sql/demo.db",
+        "SQL_STEWARD_AUDIT_DB": "__ROOT__/logs/sql-steward-audit.db"
+      }
+    },
+    "kql-sop": {
+      "command": "__ROOT__/.venv/Scripts/python.exe",
+      "args": ["-m", "kql_sop.mcp_server"]
+    },
+    "doc-steward": {
+      "command": "__ROOT__/.venv/Scripts/python.exe",
+      "args": ["-m", "doc_steward.mcp_server"],
+      "env": {
+        "DOC_STEWARD_CORPUS": "__ROOT__/data/docs/corpus.json"
+      }
+    }
+  }
+}

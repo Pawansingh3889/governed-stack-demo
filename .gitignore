@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Generated from mcpo.config.example.json by render_mcpo_config.py (machine-specific paths)
+mcpo.config.json
+
+# Generated sample data and audit/runtime logs
+data/sql/demo.db
+logs/

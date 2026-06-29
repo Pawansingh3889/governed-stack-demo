@@ -1,0 +1,60 @@
+# sql-steward semantic layer for the governed-stack demo.
+#
+# This file is the whole contract between the agent and the database. There is
+# no run_sql tool: the agent can read what is described here and nothing else,
+# and every read is compiled from these definitions, checked, and audited.
+
+dialect: sqlite
+
+entities:
+  customers:
+    table: customers
+    primary_key: id
+    description: People who pay for the product.
+    fields:
+      id: {type: int}
+      name: {type: text, pii: PERSON}
+      email: {type: text, pii: EMAIL_ADDRESS}
+      country: {type: text}
+
+  subscriptions:
+    table: subscriptions
+    primary_key: id
+    description: Active and past subscriptions.
+    fields:
+      id: {type: int}
+      customer_id: {type: int}
+      plan: {type: text}
+      mrr: {type: numeric, description: Monthly recurring revenue in USD.}
+      status: {type: text}
+
+# Only joins listed here are reachable.
+joins:
+  - left: subscriptions
+    right: customers
+    on: subscriptions.customer_id = customers.id
+
+# Pre-approved aggregates. The agent picks dimensions/filters from the
+# allow-lists; it cannot change the aggregation itself.
+metrics:
+  mrr_total:
+    entity: subscriptions
+    aggregate: sum
+    field: mrr
+    description: Total monthly recurring revenue.
+    dimensions_allowed: [plan, status, customers.country]
+    filters_allowed: [status, plan, customers.country]
+
+  customer_count:
+    entity: customers
+    aggregate: count
+    field: "*"
+    description: Number of customers.
+    dimensions_allowed: [country]
+    filters_allowed: [country]
+
+# What the layer refuses, before any query runs. Asking for email is blocked
+# here -- the agent cannot exfiltrate it no matter how it phrases the request.
+policy:
+  block_pii: [EMAIL_ADDRESS, CREDIT_CARD]
+  max_rows: 1000

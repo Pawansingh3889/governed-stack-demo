@@ -1,0 +1,24 @@
+# Open WebUI for the governed-stack demo.
+#
+# mcpo (with the three MCP servers) runs on the host in the project venv; Open
+# WebUI runs here in Docker and reaches both mcpo and Ollama on the host via
+# host.docker.internal. Start mcpo first (see README), then `docker compose up`.
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: governed-stack-webui
+    ports:
+      - "3000:8080"
+    extra_hosts:
+      # Lets the container resolve the host on Linux; harmless on Docker Desktop.
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Use the Ollama you already run on the host for chat models.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - WEBUI_AUTH=False
+    volumes:
+      - open-webui:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  open-webui:

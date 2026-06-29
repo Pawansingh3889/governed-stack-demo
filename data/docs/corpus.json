@@ -1,0 +1,28 @@
+[
+  {
+    "doc_id": "it-support",
+    "source": "handbook/it-support.md",
+    "text": "IT support and helpdesk. For laptop, VPN, or password problems, email the helpdesk at support@acme.example or call the IT support line on +44 1482 960123. Response time is one business day. This page is visible to everyone.",
+    "metadata": {"team": "it"}
+  },
+  {
+    "doc_id": "leave-policy",
+    "source": "handbook/leave-policy.md",
+    "text": "Annual leave policy. Every member of staff gets 25 days of paid annual leave per year plus public holidays. Request leave through the people portal at least two weeks in advance. Unused leave does not roll over. This policy is visible to everyone.",
+    "metadata": {"team": "people"}
+  },
+  {
+    "doc_id": "comp-bonus-2026",
+    "source": "finance/bonus-pool-2026.md",
+    "text": "Confidential compensation note. The 2026 bonus pool is set at one point two million pounds, distributed across the engineering and sales teams based on performance bands. Individual bonus letters are issued by finance in March. Do not share outside the finance team.",
+    "allowed_roles": ["finance"],
+    "metadata": {"team": "finance", "classification": "confidential"}
+  },
+  {
+    "doc_id": "board-restructure",
+    "source": "finance/board-restructure.md",
+    "text": "Restricted board paper. The bonus pool and headcount budget for the next year are under review as part of a wider restructure. Numbers are provisional and must not be circulated. Visible to finance only.",
+    "allowed_roles": ["finance"],
+    "metadata": {"team": "finance", "classification": "restricted"}
+  }
+]
