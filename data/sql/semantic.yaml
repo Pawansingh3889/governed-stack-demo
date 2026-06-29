@@ -53,6 +53,37 @@ metrics:
     dimensions_allowed: [country]
     filters_allowed: [country]
 
+# Declared data-quality checks. Each compiles to a read-only violation count;
+# run_checks returns a readiness score. The agent runs the declared checks, it
+# cannot invent new ones.
+checks:
+  email_present:
+    entity: customers
+    kind: not_null
+    field: email
+    description: Every customer has an email on file.
+  country_known:
+    entity: customers
+    kind: accepted_values
+    field: country
+    values: [UK, US, NL]
+  mrr_non_negative:
+    entity: subscriptions
+    kind: range
+    field: mrr
+    min: 0
+    description: MRR is never negative.
+  status_known:
+    entity: subscriptions
+    kind: accepted_values
+    field: status
+    values: [active, cancelled]
+  has_subscriptions:
+    entity: subscriptions
+    kind: row_count_min
+    min: 1
+    severity: warn
+
 # What the layer refuses, before any query runs. Asking for email is blocked
 # here -- the agent cannot exfiltrate it no matter how it phrases the request.
 policy:

@@ -39,9 +39,12 @@ than competing with it.
   per-role budget and a tamper-evident audit record (agent-blackbox), before and
   after execution. Default deny. The per-tool gates stay underneath as defense in
   depth. Policy lives in `policy/governed.rego` and `policy/roles.json`.
-- **Data-quality rules in the semantic layer.** `semantic.yaml` already
-  declares entities, metrics, and PII. Add assertions (not-null, ranges,
-  freshness) that run and feed schema-scout's readiness score. Still open.
+- **Data-quality rules in the semantic layer. (done)** A `checks:` block in
+  sql-steward's semantic layer declares assertions (not_null, unique, range,
+  accepted_values, row_count_min) with error or warn severity. `run_checks`
+  compiles each to a read-only violation count and returns a readiness score and
+  an ok/degraded/failing status. The agent runs the declared checks; it cannot
+  invent new ones. Tier 1 is now complete.
 
 ### Tier 2 — strengthens, already planned
 

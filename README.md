@@ -11,7 +11,7 @@ surface, in the order an agent works through a question:
 | Server | Surface | Guarantee it enforces |
 | --- | --- | --- |
 | schema-scout | Discover | Read-only catalog tools (list/describe tables, find join paths) over a generated catalog, with PII flagged per column. |
-| [sql-steward](https://github.com/Pawansingh3889/sql-steward) | Query | No `run_sql` tool exists. The agent reads only what a semantic layer permits, queries are compiled from definitions, and PII-tagged fields are refused. |
+| [sql-steward](https://github.com/Pawansingh3889/sql-steward) | Query | No `run_sql` tool exists. The agent reads only what a semantic layer permits, queries are compiled from definitions, and PII-tagged fields are refused. Declared data-quality checks (`run_checks`) report a readiness score. |
 | kql-sop | KQL | A gatekeeper lints before it runs. A query that mutates data or schema, or otherwise trips a blocking rule, is never executed. |
 | doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted before the model reads it. |
 | thread-recall | Remember | Thread-scoped remember/recall. PII is masked before anything is stored, so long-term memory never retains raw PII, and one thread never recalls another's. |

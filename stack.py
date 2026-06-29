@@ -321,6 +321,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     check("sql-steward refuses a PII field", (email or {}).get("kind") == "pii_blocked")
     metric = call("/sql-steward/get_metric", {"metric": "mrr_total", "dimensions": ["plan"]})
     check("sql-steward compiles and runs a metric", (metric or {}).get("rowcount", 0) > 0)
+    dq = call("/sql-steward/run_checks", {})
+    check("sql-steward data-quality checks pass (readiness 100)", (dq or {}).get("status") == "ok" and (dq or {}).get("readiness") == 100)
     drop = call("/kql-sop/run_kql", {"query": ".drop table T"})
     check("kql-sop still blocks the control command", (drop or {}).get("blocked") is True)
     viewer = call("/doc-steward/search_docs", {"query": "bonus pool", "role": "viewer", "k": 5})
