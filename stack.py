@@ -1,14 +1,16 @@
 """Governed-stack control plane: one cross-platform entry point.
 
-    python stack.py up        # render config, seed demo data, start the gateway
+    python stack.py up        # start mcpo + OPA + the governance gateway
     python stack.py status    # what's running and which backend each tool uses
-    python stack.py verify    # assert the governance holds (adapts to config)
+    python stack.py verify    # assert governance + gateway policy hold
     python stack.py webui      # install (first run) and start Open WebUI
-    python stack.py down       # stop the gateway
+    python stack.py down       # stop everything
 
-Configuration lives in stack.env (copy stack.env.example). Every backend is a
-config line, so the same stack runs the offline demo or points at real on-prem
-Postgres / Ollama / a KQL cluster without touching code.
+Topology: Open WebUI -> governance gateway (:8765) -> mcpo (internal :8766) -> tools.
+The gateway authenticates each call (token to role), checks an OPA/Rego policy,
+counts a per-role budget, and audits, before mcpo and the in-tool gates run.
+
+Configuration lives in stack.env (copy stack.env.example).
 """
 
 from __future__ import annotations
@@ -27,16 +29,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 RUN_DIR = ROOT / ".stack"
-PID_FILE = RUN_DIR / "mcpo.pid"
 CONFIG_FILE = ROOT / "mcpo.config.json"
 IS_WINDOWS = platform.system() == "Windows"
+SERVICES = ("gateway", "opa", "mcpo")  # display / stop order
 
 
 # --------------------------------------------------------------------------- #
 # Config
 # --------------------------------------------------------------------------- #
 def load_config() -> dict[str, str]:
-    """Read stack.env (falling back to stack.env.example), expand {root}."""
     path = ROOT / "stack.env"
     if not path.exists():
         path = ROOT / "stack.env.example"
@@ -51,7 +52,6 @@ def load_config() -> dict[str, str]:
 
 
 def venv_bin(name: str) -> str:
-    """Path to an executable inside the project venv, per-OS."""
     sub = "Scripts" if IS_WINDOWS else "bin"
     exe = f"{name}.exe" if IS_WINDOWS else name
     return str(ROOT / ".venv" / sub / exe)
@@ -61,16 +61,30 @@ def venv_python() -> str:
     return venv_bin("python")
 
 
-def render_config(cfg: dict[str, str]) -> Path:
-    """Build mcpo.config.json from stack.env. Only wires env a server needs."""
-    py = venv_python()
+def opa_bin() -> str:
+    return str(ROOT / ".opa" / ("opa.exe" if IS_WINDOWS else "opa"))
 
+
+def manager_token(cfg: dict[str, str]) -> str:
+    for pair in cfg.get("GATEWAY_TOKENS", "").split(","):
+        if ":" in pair and pair.split(":", 1)[1].strip() == "manager":
+            return pair.split(":", 1)[0].strip()
+    return ""
+
+
+def server_names() -> list[str]:
+    if CONFIG_FILE.exists():
+        return list(json.loads(CONFIG_FILE.read_text(encoding="utf-8"))["mcpServers"])
+    return ["sql-steward", "kql-sop", "doc-steward"]
+
+
+def render_config(cfg: dict[str, str]) -> Path:
+    py = venv_python()
     sql_env = {
         "SQL_STEWARD_LAYER": cfg["SQL_STEWARD_LAYER"],
         "SQL_STEWARD_DB_URL": cfg["SQL_STEWARD_DB_URL"],
         "SQL_STEWARD_AUDIT_DB": f"{ROOT.as_posix()}/logs/sql-steward-audit.db",
     }
-
     doc_env = {"DOC_STEWARD_CORPUS": cfg["DOC_STEWARD_CORPUS"]}
     if cfg.get("DOC_STEWARD_EMBED", "hashing").lower() == "ollama":
         doc_env["DOC_STEWARD_EMBED"] = "ollama"
@@ -86,16 +100,9 @@ def render_config(cfg: dict[str, str]) -> Path:
         "kql-sop": {"command": py, "args": ["-m", "kql_sop.mcp_server"], **({"env": kql_env} if kql_env else {})},
         "doc-steward": {"command": py, "args": ["-m", "doc_steward.mcp_server"], "env": doc_env},
     }
-
-    # schema-scout (schema discovery) is optional: enabled when a catalog exists.
     catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
     if catalog and Path(catalog).exists():
-        servers["schema-scout"] = {
-            "command": py,
-            "args": ["-m", "schema_scout.mcp_server", "--catalog", catalog],
-        }
-
-    # thread-recall (governed memory) is optional: enabled when a DB path is set.
+        servers["schema-scout"] = {"command": py, "args": ["-m", "schema_scout.mcp_server", "--catalog", catalog]}
     tr_db = cfg.get("THREAD_RECALL_DB", "")
     if tr_db:
         tr_env = {"THREAD_RECALL_DB": tr_db, "THREAD_RECALL_MASK": cfg.get("THREAD_RECALL_MASK", "1")}
@@ -103,41 +110,77 @@ def render_config(cfg: dict[str, str]) -> Path:
             tr_env["THREAD_RECALL_EMBED"] = "ollama"
             tr_env["THREAD_RECALL_OLLAMA_HOST"] = cfg.get("DOC_STEWARD_OLLAMA_HOST", "http://localhost:11434")
             tr_env["THREAD_RECALL_OLLAMA_MODEL"] = cfg.get("DOC_STEWARD_OLLAMA_MODEL", "nomic-embed-text")
-        servers["thread-recall"] = {
-            "command": py,
-            "args": ["-m", "thread_recall.mcp_server"],
-            "env": tr_env,
-        }
+        servers["thread-recall"] = {"command": py, "args": ["-m", "thread_recall.mcp_server"], "env": tr_env}
 
     CONFIG_FILE.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
     return CONFIG_FILE
 
 
 # --------------------------------------------------------------------------- #
+# Process management
+# --------------------------------------------------------------------------- #
+def _spawn(name: str, argv: list[str], env: dict | None = None) -> None:
+    RUN_DIR.mkdir(exist_ok=True)
+    log = open(RUN_DIR / f"{name}.log", "w", encoding="utf-8")
+    kwargs: dict = {"stdout": log, "stderr": subprocess.STDOUT, "cwd": str(ROOT)}
+    if env is not None:
+        kwargs["env"] = {**os.environ, **env}
+    if IS_WINDOWS:
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen(argv, **kwargs)
+    (RUN_DIR / f"{name}.pid").write_text(str(proc.pid), encoding="utf-8")
+
+
+def _stop(name: str) -> None:
+    pf = RUN_DIR / f"{name}.pid"
+    if not pf.exists():
+        return
+    pid = int(pf.read_text().strip())
+    try:
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass
+    pf.unlink(missing_ok=True)
+
+
+# --------------------------------------------------------------------------- #
 # HTTP helpers
 # --------------------------------------------------------------------------- #
-def base_url(cfg: dict[str, str]) -> str:
-    return f"http://localhost:{cfg.get('MCPO_PORT', '8765')}"
+def gateway_base(cfg: dict[str, str]) -> str:
+    return f"http://localhost:{cfg.get('GATEWAY_PORT', '8765')}"
 
 
-def call(base: str, path: str, body: dict) -> dict:
-    req = urllib.request.Request(
-        f"{base}{path}",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
-
-
-def gateway_ready(base: str) -> bool:
-    names = ("sql-steward", "kql-sop", "doc-steward")
-    if CONFIG_FILE.exists():
-        names = tuple(json.loads(CONFIG_FILE.read_text(encoding="utf-8"))["mcpServers"].keys())
+def request(url: str, body=None, token: str | None = None, method: str = "POST"):
+    """Return (status_code, json_or_none); does not raise on 4xx/5xx."""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        for name in names:
-            urllib.request.urlopen(f"{base}/{name}/openapi.json", timeout=2).read()
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.loads(resp.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read() or b"null")
+        except Exception:
+            return exc.code, None
+
+
+def gateway_ready(cfg: dict[str, str]) -> bool:
+    opa_port = cfg.get("OPA_PORT", "8181")
+    token = manager_token(cfg)
+    try:
+        urllib.request.urlopen(f"http://localhost:{opa_port}/health", timeout=2).read()
+        for name in server_names():
+            code, _ = request(f"{gateway_base(cfg)}/{name}/openapi.json", token=token, method="GET")
+            if code != 200:
+                return False
         return True
     except (urllib.error.URLError, OSError):
         return False
@@ -147,55 +190,59 @@ def gateway_ready(base: str) -> bool:
 # Commands
 # --------------------------------------------------------------------------- #
 def maybe_seed(cfg: dict[str, str]) -> None:
-    """Seed the bundled SQLite demo db only if that's the configured backend."""
     db_url = cfg["SQL_STEWARD_DB_URL"]
     demo_db = ROOT / "data" / "sql" / "demo.db"
     if db_url.startswith("sqlite") and demo_db.as_posix() in db_url and not demo_db.exists():
         subprocess.run([venv_python(), str(ROOT / "data" / "sql" / "build_demo_db.py")], check=True)
 
-    # Generate the demo schema catalog if schema-scout points at the bundled one.
     catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
     demo_catalog = (ROOT / "data" / "schema" / "catalog.json").as_posix()
     if catalog and Path(catalog).as_posix() == demo_catalog and not Path(catalog).exists():
         subprocess.run(
-            [venv_python(), "-m", "schema_scout.cli", "demo", "--out", str(ROOT / "data" / "schema")],
-            check=True,
+            [venv_python(), "-m", "schema_scout.cli", "demo", "--out", str(ROOT / "data" / "schema")], check=True
         )
 
 
 def cmd_up(args: argparse.Namespace) -> int:
     cfg = load_config()
-    base = base_url(cfg)
-    if gateway_ready(base):
+    base = gateway_base(cfg)
+    if gateway_ready(cfg):
         print(f"Gateway already running at {base}")
     else:
         RUN_DIR.mkdir(exist_ok=True)
         (ROOT / "logs").mkdir(exist_ok=True)
         render_config(cfg)
         maybe_seed(cfg)
-        port = cfg.get("MCPO_PORT", "8765")
-        log = open(RUN_DIR / "mcpo.log", "w", encoding="utf-8")
-        kwargs = {"stdout": log, "stderr": subprocess.STDOUT, "cwd": str(ROOT)}
-        if IS_WINDOWS:
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            kwargs["start_new_session"] = True
-        proc = subprocess.Popen(
-            [venv_bin("mcpo"), "--config", str(CONFIG_FILE), "--port", str(port)], **kwargs
+        if not Path(opa_bin()).exists():
+            print("OPA binary missing at .opa/ — run setup.ps1 to download it.", file=sys.stderr)
+            return 2
+
+        mport = cfg.get("MCPO_PORT", "8766")
+        oport = cfg.get("OPA_PORT", "8181")
+        _spawn("mcpo", [venv_bin("mcpo"), "--config", str(CONFIG_FILE), "--port", mport])
+        _spawn("opa", [opa_bin(), "run", "--server", "--addr", f"localhost:{oport}", "policy/"])
+        _spawn(
+            "gateway",
+            [venv_python(), "-m", "uvicorn", "gateway:app", "--host", "127.0.0.1", "--port", cfg.get("GATEWAY_PORT", "8765")],
+            env={
+                "MCPO_INTERNAL_URL": f"http://localhost:{mport}",
+                "OPA_URL": f"http://localhost:{oport}/v1/data/governed/decision",
+                "GATEWAY_TOKENS": cfg.get("GATEWAY_TOKENS", ""),
+                "GATEWAY_BUDGET": cfg.get("GATEWAY_BUDGET", "500"),
+                "GATEWAY_AUDIT_DB": f"{ROOT.as_posix()}/logs/gateway-audit.db",
+            },
         )
-        PID_FILE.write_text(str(proc.pid), encoding="utf-8")
-        print(f"Starting gateway on {base} (pid {proc.pid}) ...")
+        print(f"Starting gateway on {base} (auth + OPA policy) ...")
         for _ in range(60):
-            if gateway_ready(base):
+            if gateway_ready(cfg):
                 break
             time.sleep(1)
         else:
-            print("Gateway did not become ready; see .stack/mcpo.log", file=sys.stderr)
+            print("Gateway did not become ready; see .stack/*.log", file=sys.stderr)
             return 2
 
-    print("\nGoverned tools live:")
-    server_names = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))["mcpServers"].keys()
-    for name in server_names:
+    print("\nGoverned tools (auth required) live behind the gateway:")
+    for name in server_names():
         print(f"  {base}/{name}/docs")
     _print_backends(cfg)
     if args.webui:
@@ -204,19 +251,9 @@ def cmd_up(args: argparse.Namespace) -> int:
 
 
 def cmd_down(args: argparse.Namespace) -> int:
-    if not PID_FILE.exists():
-        print("No pid file; gateway not started by this tool.")
-        return 0
-    pid = int(PID_FILE.read_text().strip())
-    try:
-        if IS_WINDOWS:
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        print(f"Stopped gateway (pid {pid}).")
-    except (ProcessLookupError, OSError) as exc:
-        print(f"Could not stop pid {pid}: {exc}")
-    PID_FILE.unlink(missing_ok=True)
+    for name in SERVICES:
+        _stop(name)
+    print("Stopped gateway, OPA, and mcpo.")
     return 0
 
 
@@ -224,12 +261,16 @@ def _print_backends(cfg: dict[str, str]) -> None:
     sql = "SQLite (demo)" if cfg["SQL_STEWARD_DB_URL"].startswith("sqlite") else cfg["SQL_STEWARD_DB_URL"].split("://")[0]
     embed = cfg.get("DOC_STEWARD_EMBED", "hashing")
     kql = "execute" if cfg.get("KQL_SOP_CLUSTER") else "validate-only"
-    print("\nBackends:")
+    roles = [p.split(":", 1)[1].strip() for p in cfg.get("GATEWAY_TOKENS", "").split(",") if ":" in p]
+    print("\nGateway:")
+    print(f"  auth   : {len(roles)} role token(s) ({', '.join(roles)})")
+    print(f"  policy : OPA/Rego at :{cfg.get('OPA_PORT', '8181')} (default deny)")
+    print(f"  mcpo   : internal :{cfg.get('MCPO_PORT', '8766')}")
+    print("Backends:")
     print(f"  sql-steward : {sql}")
     print(f"  doc-steward : {embed} embedder")
     print(f"  kql-sop     : {kql}")
-    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
-    if catalog and Path(catalog).exists():
+    if cfg.get("SCHEMA_SCOUT_CATALOG") and Path(cfg["SCHEMA_SCOUT_CATALOG"]).exists():
         print("  schema-scout: catalog discovery")
     if cfg.get("THREAD_RECALL_DB"):
         mask = "masked" if cfg.get("THREAD_RECALL_MASK", "1").lower() in ("1", "true", "yes", "on") else "unmasked"
@@ -238,92 +279,88 @@ def _print_backends(cfg: dict[str, str]) -> None:
 
 def cmd_status(args: argparse.Namespace) -> int:
     cfg = load_config()
-    base = base_url(cfg)
-    up = gateway_ready(base)
-    print(f"Gateway {base}: {'UP' if up else 'DOWN'}")
+    up = gateway_ready(cfg)
+    print(f"Gateway {gateway_base(cfg)}: {'UP' if up else 'DOWN'}")
     if up:
         _print_backends(cfg)
     return 0 if up else 1
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    """Assert governance against the running gateway, adapting to config."""
     cfg = load_config()
-    base = base_url(cfg)
-    if not gateway_ready(base):
+    base = gateway_base(cfg)
+    if not gateway_ready(cfg):
         print("Gateway not running. Start it with: python stack.py up", file=sys.stderr)
         return 2
 
+    mgr = manager_token(cfg)
+    tokens = {p.split(":", 1)[1].strip(): p.split(":", 1)[0].strip() for p in cfg.get("GATEWAY_TOKENS", "").split(",") if ":" in p}
     passed = failed = 0
 
     def check(label: str, ok: bool) -> None:
         nonlocal passed, failed
         print(f"  [{'PASS' if ok else 'FAIL'}] {label}")
-        if ok:
-            passed += 1
-        else:
-            failed += 1
+        passed += int(bool(ok))
+        failed += int(not ok)
 
-    email = call(base, "/sql-steward/get_records", {"entity": "customers", "fields": ["id", "email"]})
-    check("sql-steward refuses a PII field", email.get("kind") == "pii_blocked")
-    metric = call(base, "/sql-steward/get_metric", {"metric": "mrr_total", "dimensions": ["plan"]})
-    check("sql-steward compiles and runs a metric", metric.get("rowcount", 0) > 0)
+    def call(path: str, body: dict, token: str | None = mgr):
+        return request(f"{base}{path}", body, token=token)[1]
 
-    drop = call(base, "/kql-sop/run_kql", {"query": ".drop table T"})
-    check("kql-sop blocks a control command", drop.get("blocked") is True)
+    print("\ngateway (auth + OPA policy)")
+    code, _ = request(f"{base}/sql-steward/get_metric", {"metric": "mrr_total"}, token=None)
+    check("rejects an unauthenticated call (401)", code == 401)
+    code, _ = request(f"{base}/sql-steward/get_metric", {"metric": "mrr_total"}, token=tokens.get("viewer"))
+    check("OPA denies viewer the metric tool (403)", code == 403)
+    code, _ = request(f"{base}/kql-sop/run_kql", {"query": ".drop table T"}, token=tokens.get("analyst"))
+    check("OPA denies analyst a KQL control command (403)", code == 403)
+    code, _ = request(f"{base}/kql-sop/run_kql", {"query": ".drop table T"}, token=mgr)
+    check("OPA allows manager the control command (200)", code == 200)
 
-    viewer = call(base, "/doc-steward/search_docs", {"query": "bonus pool", "role": "viewer", "k": 5})
-    check("doc-steward denies finance docs to a viewer",
-          "comp-bonus-2026" not in {r["doc_id"] for r in viewer["results"]})
-    finance = call(base, "/doc-steward/search_docs", {"query": "bonus pool", "role": "finance", "k": 5})
-    check("doc-steward grants finance docs to finance",
-          "comp-bonus-2026" in {r["doc_id"] for r in finance["results"]})
-
-    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
-    if catalog and Path(catalog).exists():
-        tables = call(base, "/schema-scout/list_tables", {})
+    print("\nin-tool gates (defense in depth, via manager token)")
+    email = call("/sql-steward/get_records", {"entity": "customers", "fields": ["id", "email"]})
+    check("sql-steward refuses a PII field", (email or {}).get("kind") == "pii_blocked")
+    metric = call("/sql-steward/get_metric", {"metric": "mrr_total", "dimensions": ["plan"]})
+    check("sql-steward compiles and runs a metric", (metric or {}).get("rowcount", 0) > 0)
+    drop = call("/kql-sop/run_kql", {"query": ".drop table T"})
+    check("kql-sop still blocks the control command", (drop or {}).get("blocked") is True)
+    viewer = call("/doc-steward/search_docs", {"query": "bonus pool", "role": "viewer", "k": 5})
+    check("doc-steward denies finance docs to a viewer", "comp-bonus-2026" not in {r["doc_id"] for r in (viewer or {}).get("results", [])})
+    finance = call("/doc-steward/search_docs", {"query": "bonus pool", "role": "finance", "k": 5})
+    check("doc-steward grants finance docs to finance", "comp-bonus-2026" in {r["doc_id"] for r in (finance or {}).get("results", [])})
+    if cfg.get("SCHEMA_SCOUT_CATALOG") and Path(cfg["SCHEMA_SCOUT_CATALOG"]).exists():
+        tables = call("/schema-scout/list_tables", {})
         check("schema-scout lists catalog tables", isinstance(tables, list) and len(tables) > 0)
-
     if cfg.get("THREAD_RECALL_DB"):
         tid = "verify-check"
-        call(base, "/thread-recall/remember", {"thread_id": tid, "content": "reach me at zoe@example.com about Pro"})
-        rec = call(base, "/thread-recall/recall", {"thread_id": tid, "query": "contact details", "k": 3})
-        text = " ".join(r["content"] for r in rec["results"])
-        check("thread-recall masks PII on write", rec["count"] > 0 and "@example.com" not in text)
-        call(base, "/thread-recall/forget", {"thread_id": tid})
+        call("/thread-recall/remember", {"thread_id": tid, "content": "reach me at zoe@example.com about Pro"})
+        rec = call("/thread-recall/recall", {"thread_id": tid, "query": "contact details", "k": 3})
+        text = " ".join(r["content"] for r in (rec or {}).get("results", []))
+        check("thread-recall masks PII on write", (rec or {}).get("count", 0) > 0 and "@example.com" not in text)
+        call("/thread-recall/forget", {"thread_id": tid})
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 
 
 def cmd_webui(args: argparse.Namespace) -> int:
-    """Install (first run) and start Open WebUI natively, no Docker."""
     py = venv_python()
     have = subprocess.run([py, "-c", "import open_webui"], capture_output=True).returncode == 0
     if not have:
-        print("Installing Open WebUI (first run, this takes a few minutes) ...")
+        print("Installing Open WebUI (first run, a few minutes) ...")
         rc = subprocess.run(
-            [py, "-m", "pip", "install", "--upgrade",
-             "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org",
-             "open-webui"]
+            [py, "-m", "pip", "install", "--upgrade", "--trusted-host", "pypi.org",
+             "--trusted-host", "files.pythonhosted.org", "open-webui"]
         ).returncode
         if rc != 0:
-            print("Open WebUI install failed.", file=sys.stderr)
             return rc
-    print("Starting Open WebUI on http://localhost:8080 ...")
     cfg = load_config()
     ollama = cfg.get("DOC_STEWARD_OLLAMA_HOST", "http://localhost:11434")
-    # Use Ollama for chat AND for RAG embeddings, so no SentenceTransformer model
-    # is downloaded from HuggingFace (which a TLS-inspecting proxy tends to block).
+    print("Starting Open WebUI on http://localhost:8080 ...")
+    print("Add tool servers as http://localhost:8765/<server> with a gateway token as the API key.")
     env = {
-        **os.environ,
-        "WEBUI_AUTH": "False",
-        "OLLAMA_BASE_URL": ollama,
-        "RAG_EMBEDDING_ENGINE": "ollama",
-        "RAG_EMBEDDING_MODEL": "nomic-embed-text",
-        "HF_HUB_OFFLINE": "1",
-        # Default new chats to a real chat model, not the embedder.
-        "DEFAULT_MODELS": cfg.get("CHAT_MODEL", "qwen3:14b"),
+        **os.environ, "WEBUI_AUTH": "False", "OLLAMA_BASE_URL": ollama,
+        "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": "nomic-embed-text",
+        "HF_HUB_OFFLINE": "1", "DEFAULT_MODELS": cfg.get("CHAT_MODEL", "qwen3:14b"),
     }
     subprocess.run([venv_bin("open-webui"), "serve", "--port", "8080"], env=env)
     return 0
@@ -332,18 +369,14 @@ def cmd_webui(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Governed-stack control plane.")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    up = sub.add_parser("up", help="render config, seed demo data, start the gateway")
+    up = sub.add_parser("up", help="start mcpo + OPA + the governance gateway")
     up.add_argument("--webui", action="store_true", help="also start Open WebUI")
-    sub.add_parser("down", help="stop the gateway")
+    sub.add_parser("down", help="stop everything")
     sub.add_parser("status", help="show what's running and each tool's backend")
-    sub.add_parser("verify", help="assert the governance holds")
+    sub.add_parser("verify", help="assert governance + gateway policy hold")
     sub.add_parser("webui", help="install and start Open WebUI (no Docker)")
     args = parser.parse_args()
-
-    return {
-        "up": cmd_up, "down": cmd_down, "status": cmd_status,
-        "verify": cmd_verify, "webui": cmd_webui,
-    }[args.cmd](args)
+    return {"up": cmd_up, "down": cmd_down, "status": cmd_status, "verify": cmd_verify, "webui": cmd_webui}[args.cmd](args)
 
 
 if __name__ == "__main__":

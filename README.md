@@ -23,7 +23,8 @@ optional, enabled by config.)
 
 ```mermaid
 flowchart TD
-    A["Agent — Open WebUI · Ollama (local)"] --> G{{"mcpo gateway — every call governed"}}
+    A["Agent — Open WebUI · Ollama (local)"] --> GW{{"governance gateway :8765<br/>auth · OPA/Rego policy · budget · audit"}}
+    GW --> G["mcpo (internal :8766)"]
     G --> S1["schema-scout<br/>discover · PII flagged"]
     G --> S2["sql-steward<br/>query · no run_sql, PII blocked"]
     G --> S3["kql-sop<br/>KQL · mutations refused"]
@@ -36,9 +37,13 @@ flowchart TD
     S5 --> B5[("memory db")]
 ```
 
-The loop is discover → query → KQL → docs → remember, every step governed.
-Nothing leaves the machine, and any backend swaps in `stack.env` (see below)
-without changing the gates. A rendered diagram is at [docs/workflow.svg](docs/workflow.svg).
+Two gates per call, on purpose. The gateway authenticates the caller (token to
+role), asks OPA whether that role may call that tool with those arguments, counts
+a per-role budget, and writes a tamper-evident audit record. Then the in-tool
+gates run underneath (no run_sql, mutations refused, PII redacted), so even a
+policy mistake cannot let a tool misbehave. The loop is discover → query → KQL →
+docs → remember. Nothing leaves the machine, and any backend swaps in `stack.env`
+without changing the gates. Rendered diagrams are in [docs/](docs/).
 
 ## Prerequisites
 
@@ -60,17 +65,21 @@ without changing the gates. A rendered diagram is at [docs/workflow.svg](docs/wo
 .\.venv\Scripts\python.exe stack.py down       # stop the gateway
 ```
 
-`stack.py up` prints the three tool URLs. To see governance immediately without
-the chat UI, open any of them in a browser and use "Try it out":
+`stack.py up` starts three processes (mcpo, OPA, the gateway) and prints the tool
+URLs. The gateway requires a token: every call carries `Authorization: Bearer
+<token>` (or `X-API-Key`), and the token's role drives the policy. The demo
+tokens and the role each maps to are in `stack.env` (`GATEWAY_TOKENS`), and the
+allow-lists are in `policy/roles.json`.
 
-- `http://localhost:8765/sql-steward/docs`
-- `http://localhost:8765/kql-sop/docs`
-- `http://localhost:8765/doc-steward/docs`
+`stack.py verify` exercises both layers: it confirms an unauthenticated call is
+rejected, that OPA denies a viewer the metric tool and denies an analyst a KQL
+control command (only a manager may run one), and that the in-tool gates still
+hold underneath.
 
 For the chat UI, `stack.py up --webui` serves Open WebUI on `http://localhost:8080`.
-Under Settings, Tools, add the three servers as OpenAPI tool servers
-(`http://localhost:8765/sql-steward`, `/kql-sop`, `/doc-steward`), pick an Ollama
-model, and chat with the tools enabled.
+Under Settings, Tools, add each server as an OpenAPI tool server
+(`http://localhost:8765/sql-steward`, and so on) with a gateway token as the API
+key, pick an Ollama model, and chat with the tools enabled.
 
 ## Adapt it to real infrastructure
 

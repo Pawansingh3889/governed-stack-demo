@@ -4,14 +4,15 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-$sqlSteward   = "C:\Projects\sql-steward"
-$kqlSop       = "C:\Users\pawan\work\kql-sop"
-$docSteward   = "C:\Users\pawan\work\doc-steward"
-$schemaScout  = "C:\Projects\schema-scout"
-$threadRecall = "C:\Projects\thread-recall"
-$piiVeil      = "C:\Projects\pii-veil"
+$sqlSteward    = "C:\Projects\sql-steward"
+$kqlSop        = "C:\Users\pawan\work\kql-sop"
+$docSteward    = "C:\Users\pawan\work\doc-steward"
+$schemaScout   = "C:\Projects\schema-scout"
+$threadRecall  = "C:\Projects\thread-recall"
+$piiVeil       = "C:\Projects\pii-veil"
+$agentBlackbox = "C:\Projects\agent-blackbox"
 
-foreach ($p in @($sqlSteward, $kqlSop, $docSteward, $schemaScout, $threadRecall, $piiVeil)) {
+foreach ($p in @($sqlSteward, $kqlSop, $docSteward, $schemaScout, $threadRecall, $piiVeil, $agentBlackbox)) {
     if (-not (Test-Path $p)) { throw "Source repo not found: $p (edit setup.ps1)" }
 }
 
@@ -27,7 +28,17 @@ $trusted = @("--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted
 
 Write-Host "Installing the governed servers + mcpo..." -ForegroundColor Cyan
 & $venvPy -m pip install --quiet --upgrade pip @trusted
-& $venvPy -m pip install --quiet @trusted -e $sqlSteward -e $kqlSop -e $docSteward -e $schemaScout -e $threadRecall -e $piiVeil "mcp>=1.0" mcpo
+& $venvPy -m pip install --quiet @trusted -e $sqlSteward -e $kqlSop -e $docSteward -e $schemaScout -e $threadRecall -e $piiVeil -e $agentBlackbox "mcp>=1.0" mcpo
+
+# OPA binary for the gateway policy layer (large; not committed).
+$opaExe = "$root\.opa\opa.exe"
+if (-not (Test-Path $opaExe)) {
+    Write-Host "Downloading OPA (policy engine)..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force "$root\.opa" | Out-Null
+    $url = "https://github.com/open-policy-agent/opa/releases/download/v1.4.2/opa_windows_amd64.exe"
+    # -SslProtocol / revocation: the corporate proxy breaks revocation checks; curl handles it.
+    curl.exe -L --ssl-no-revoke -o $opaExe $url
+}
 
 Write-Host ""
 Write-Host "Setup complete. The venv is ready; stack.py drives everything from here." -ForegroundColor Green

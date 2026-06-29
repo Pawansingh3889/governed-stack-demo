@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "viewer": {
+      "tools": ["schema-scout/*", "doc-steward/search_docs"]
+    },
+    "analyst": {
+      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "kql-sop/*", "thread-recall/*"]
+    },
+    "finance": {
+      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "thread-recall/*"]
+    },
+    "manager": {
+      "tools": ["*"]
+    }
+  }
+}

@@ -30,16 +30,18 @@ than competing with it.
 
 ### Tier 1 — fills a real gap
 
-- **Auth at the gateway.** mcpo currently has no key and no identity. Add an
-  API key or OIDC check at the boundary (the on-prem equivalent of Entra).
-- **A gateway policy layer (OPA/Rego).** Uniform RBAC, a context and cost
-  budget, and one audit envelope around every call, before and after execution.
-  The per-tool gates stay; this adds the cross-cutting concerns that should not
-  be re-implemented in each tool. Matches the governance rail in the
-  system-design diagram.
+- **Auth at the gateway. (done)** A governance gateway now sits in front of
+  mcpo on :8765. Every call carries a token, the token maps to a role, and an
+  unauthenticated call is rejected. Token-to-role pairs are in `stack.env`;
+  swapping in OIDC is the production step.
+- **A gateway policy layer (OPA/Rego). (done)** OPA runs as a policy engine and
+  decides allow or deny for every call by role, tool, and arguments, with a
+  per-role budget and a tamper-evident audit record (agent-blackbox), before and
+  after execution. Default deny. The per-tool gates stay underneath as defense in
+  depth. Policy lives in `policy/governed.rego` and `policy/roles.json`.
 - **Data-quality rules in the semantic layer.** `semantic.yaml` already
   declares entities, metrics, and PII. Add assertions (not-null, ranges,
-  freshness) that run and feed schema-scout's readiness score.
+  freshness) that run and feed schema-scout's readiness score. Still open.
 
 ### Tier 2 — strengthens, already planned
 

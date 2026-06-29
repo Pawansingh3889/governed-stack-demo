@@ -20,3 +20,6 @@ products.json
 # Open WebUI runtime files
 .webui_secret_key
 webui.db
+
+# OPA binary (large; downloaded by setup.ps1 / stack.py)
+.opa/
