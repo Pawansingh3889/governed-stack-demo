@@ -13,6 +13,7 @@ stack.env
 # Runtime state and generated artifacts
 .stack/
 data/sql/demo.db
+data/schema/
 logs/
 products.json
 

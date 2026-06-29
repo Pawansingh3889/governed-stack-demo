@@ -81,14 +81,21 @@ def render_config(cfg: dict[str, str]) -> Path:
     if cfg.get("KQL_SOP_CLUSTER") and cfg.get("KQL_SOP_DATABASE"):
         kql_env = {"KQL_SOP_CLUSTER": cfg["KQL_SOP_CLUSTER"], "KQL_SOP_DATABASE": cfg["KQL_SOP_DATABASE"]}
 
-    config = {
-        "mcpServers": {
-            "sql-steward": {"command": py, "args": ["-m", "sql_steward.server"], "env": sql_env},
-            "kql-sop": {"command": py, "args": ["-m", "kql_sop.mcp_server"], **({"env": kql_env} if kql_env else {})},
-            "doc-steward": {"command": py, "args": ["-m", "doc_steward.mcp_server"], "env": doc_env},
-        }
+    servers = {
+        "sql-steward": {"command": py, "args": ["-m", "sql_steward.server"], "env": sql_env},
+        "kql-sop": {"command": py, "args": ["-m", "kql_sop.mcp_server"], **({"env": kql_env} if kql_env else {})},
+        "doc-steward": {"command": py, "args": ["-m", "doc_steward.mcp_server"], "env": doc_env},
     }
-    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    # schema-scout (schema discovery) is optional: enabled when a catalog exists.
+    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
+    if catalog and Path(catalog).exists():
+        servers["schema-scout"] = {
+            "command": py,
+            "args": ["-m", "schema_scout.mcp_server", "--catalog", catalog],
+        }
+
+    CONFIG_FILE.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
     return CONFIG_FILE
 
 
@@ -111,8 +118,11 @@ def call(base: str, path: str, body: dict) -> dict:
 
 
 def gateway_ready(base: str) -> bool:
+    names = ("sql-steward", "kql-sop", "doc-steward")
+    if CONFIG_FILE.exists():
+        names = tuple(json.loads(CONFIG_FILE.read_text(encoding="utf-8"))["mcpServers"].keys())
     try:
-        for name in ("sql-steward", "kql-sop", "doc-steward"):
+        for name in names:
             urllib.request.urlopen(f"{base}/{name}/openapi.json", timeout=2).read()
         return True
     except (urllib.error.URLError, OSError):
@@ -128,6 +138,15 @@ def maybe_seed(cfg: dict[str, str]) -> None:
     demo_db = ROOT / "data" / "sql" / "demo.db"
     if db_url.startswith("sqlite") and demo_db.as_posix() in db_url and not demo_db.exists():
         subprocess.run([venv_python(), str(ROOT / "data" / "sql" / "build_demo_db.py")], check=True)
+
+    # Generate the demo schema catalog if schema-scout points at the bundled one.
+    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
+    demo_catalog = (ROOT / "data" / "schema" / "catalog.json").as_posix()
+    if catalog and Path(catalog).as_posix() == demo_catalog and not Path(catalog).exists():
+        subprocess.run(
+            [venv_python(), "-m", "schema_scout.cli", "demo", "--out", str(ROOT / "data" / "schema")],
+            check=True,
+        )
 
 
 def cmd_up(args: argparse.Namespace) -> int:
@@ -161,7 +180,8 @@ def cmd_up(args: argparse.Namespace) -> int:
             return 2
 
     print("\nGoverned tools live:")
-    for name in ("sql-steward", "kql-sop", "doc-steward"):
+    server_names = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))["mcpServers"].keys()
+    for name in server_names:
         print(f"  {base}/{name}/docs")
     _print_backends(cfg)
     if args.webui:
@@ -194,6 +214,9 @@ def _print_backends(cfg: dict[str, str]) -> None:
     print(f"  sql-steward : {sql}")
     print(f"  doc-steward : {embed} embedder")
     print(f"  kql-sop     : {kql}")
+    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
+    if catalog and Path(catalog).exists():
+        print("  schema-scout: catalog discovery")
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -238,6 +261,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
     finance = call(base, "/doc-steward/search_docs", {"query": "bonus pool", "role": "finance", "k": 5})
     check("doc-steward grants finance docs to finance",
           "comp-bonus-2026" in {r["doc_id"] for r in finance["results"]})
+
+    catalog = cfg.get("SCHEMA_SCOUT_CATALOG", "")
+    if catalog and Path(catalog).exists():
+        tables = call(base, "/schema-scout/list_tables", {})
+        check("schema-scout lists catalog tables", isinstance(tables, list) and len(tables) > 0)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

@@ -13,6 +13,7 @@ surface:
 | [sql-steward](https://github.com/Pawansingh3889/sql-steward) | SQL | No `run_sql` tool exists. The agent reads only what a semantic layer permits, queries are compiled from definitions, and PII-tagged fields are refused. |
 | kql-sop | KQL | A gatekeeper lints before it runs. A query that mutates data or schema, or otherwise trips a blocking rule, is never executed. |
 | doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted in the text before the model reads it. |
+| schema-scout | Schema discovery | Read-only catalog tools (list tables, describe, find join paths) over a generated catalog, with PII flagged per column. Optional; enabled when a catalog is present. |
 
 The three are wired into [Open WebUI](https://github.com/open-webui/open-webui)
 through [mcpo](https://github.com/open-webui/mcpo), which exposes each MCP server
@@ -68,6 +69,7 @@ change, and the governance applies identically either way:
 | Hashing to real embeddings | `DOC_STEWARD_EMBED=ollama` |
 | Validate-only to a live KQL cluster | set `KQL_SOP_CLUSTER` and `KQL_SOP_DATABASE` |
 | A different corpus or semantic layer | `DOC_STEWARD_CORPUS` / `SQL_STEWARD_LAYER` |
+| Schema discovery over your own schema | point `SCHEMA_SCOUT_CATALOG` at a catalog (the demo one is `schema-scout demo`; for a real SQL Server schema, generate it with `schema-scout run`) |
 
 Re-run `stack.py up` and the gateway is rewired. `stack.py status` shows which
 backend each tool is using.

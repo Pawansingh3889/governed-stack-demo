@@ -4,11 +4,12 @@
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-$sqlSteward = "C:\Projects\sql-steward"
-$kqlSop     = "C:\Users\pawan\work\kql-sop"
-$docSteward = "C:\Users\pawan\work\doc-steward"
+$sqlSteward  = "C:\Projects\sql-steward"
+$kqlSop      = "C:\Users\pawan\work\kql-sop"
+$docSteward  = "C:\Users\pawan\work\doc-steward"
+$schemaScout = "C:\Projects\schema-scout"
 
-foreach ($p in @($sqlSteward, $kqlSop, $docSteward)) {
+foreach ($p in @($sqlSteward, $kqlSop, $docSteward, $schemaScout)) {
     if (-not (Test-Path $p)) { throw "Source repo not found: $p (edit setup.ps1)" }
 }
 
@@ -22,9 +23,9 @@ $venvPy = "$root\.venv\Scripts\python.exe"
 # This network sits behind an SSL-inspecting proxy; trust the PyPI hosts.
 $trusted = @("--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org")
 
-Write-Host "Installing the three servers + mcpo..." -ForegroundColor Cyan
+Write-Host "Installing the governed servers + mcpo..." -ForegroundColor Cyan
 & $venvPy -m pip install --quiet --upgrade pip @trusted
-& $venvPy -m pip install --quiet @trusted -e $sqlSteward -e $kqlSop -e $docSteward mcpo
+& $venvPy -m pip install --quiet @trusted -e $sqlSteward -e $kqlSop -e $docSteward -e $schemaScout "mcp>=1.0" mcpo
 
 Write-Host ""
 Write-Host "Setup complete. The venv is ready; stack.py drives everything from here." -ForegroundColor Green
