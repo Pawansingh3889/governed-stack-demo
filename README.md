@@ -5,26 +5,40 @@ and a document corpus, where every answer goes through a governance gate. Unsafe
 queries are refused, PII is blocked or redacted, document access is scoped by
 role, and every read is audited. Nothing leaves the machine.
 
-It composes three MCP servers that each enforce the same pattern on a different
-surface:
+It composes five MCP servers that each enforce the same pattern on a different
+surface, in the order an agent works through a question:
 
 | Server | Surface | Guarantee it enforces |
 | --- | --- | --- |
-| [sql-steward](https://github.com/Pawansingh3889/sql-steward) | SQL | No `run_sql` tool exists. The agent reads only what a semantic layer permits, queries are compiled from definitions, and PII-tagged fields are refused. |
+| schema-scout | Discover | Read-only catalog tools (list/describe tables, find join paths) over a generated catalog, with PII flagged per column. |
+| [sql-steward](https://github.com/Pawansingh3889/sql-steward) | Query | No `run_sql` tool exists. The agent reads only what a semantic layer permits, queries are compiled from definitions, and PII-tagged fields are refused. |
 | kql-sop | KQL | A gatekeeper lints before it runs. A query that mutates data or schema, or otherwise trips a blocking rule, is never executed. |
-| doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted in the text before the model reads it. |
-| schema-scout | Schema discovery | Read-only catalog tools (list tables, describe, find join paths) over a generated catalog, with PII flagged per column. Optional; enabled when a catalog is present. |
-| thread-recall | Memory | Thread-scoped remember/recall. PII is masked before anything is stored, so long-term memory never retains raw PII, and one thread never recalls another's turns. Optional. |
+| doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted before the model reads it. |
+| thread-recall | Remember | Thread-scoped remember/recall. PII is masked before anything is stored, so long-term memory never retains raw PII, and one thread never recalls another's. |
 
-The three are wired into [Open WebUI](https://github.com/open-webui/open-webui)
+The five are wired into [Open WebUI](https://github.com/open-webui/open-webui)
 through [mcpo](https://github.com/open-webui/mcpo), which exposes each MCP server
-as an OpenAPI tool the chat model can call.
+as an OpenAPI tool the chat model can call. (schema-scout and thread-recall are
+optional, enabled by config.)
 
+```mermaid
+flowchart TD
+    A["Agent — Open WebUI · Ollama (local)"] --> G{{"mcpo gateway — every call governed"}}
+    G --> S1["schema-scout<br/>discover · PII flagged"]
+    G --> S2["sql-steward<br/>query · no run_sql, PII blocked"]
+    G --> S3["kql-sop<br/>KQL · mutations refused"]
+    G --> S4["doc-steward<br/>docs · role-scoped, redacted"]
+    G --> S5["thread-recall<br/>remember · masked on write"]
+    S1 --> B1[("catalog")]
+    S2 --> B2[("SQLite / Postgres")]
+    S3 --> B3[("KQL cluster")]
+    S4 --> B4[("doc corpus")]
+    S5 --> B5[("memory db")]
 ```
-Open WebUI  ->  mcpo  ->  sql-steward  ->  SQLite (semantic layer + PII policy)
- (chat)        (proxy)    kql-sop       ->  KQL linter / gatekeeper
-                          doc-steward   ->  in-memory RAG (role ACLs + redaction)
-```
+
+The loop is discover → query → KQL → docs → remember, every step governed.
+Nothing leaves the machine, and any backend swaps in `stack.env` (see below)
+without changing the gates. A rendered diagram is at [docs/workflow.svg](docs/workflow.svg).
 
 ## Prerequisites
 

@@ -1,0 +1,80 @@
+<svg viewBox="0 0 980 500" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif" role="img">
+  <title>Governed stack workflow</title>
+  <desc>An agent in Open WebUI calls tools through the mcpo gateway, which fronts five governed MCP tools — schema-scout, sql-steward, kql-sop, doc-steward and thread-recall — each enforcing a governance rule before reaching its backend. Everything runs on-prem.</desc>
+  <rect x="0" y="0" width="980" height="500" fill="#ffffff"/>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8a8a8a"/>
+    </marker>
+  </defs>
+
+  <rect x="380" y="22" width="220" height="50" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="490" y="43" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a1a">Agent</text>
+  <text x="490" y="60" text-anchor="middle" font-size="11" fill="#666666">Open WebUI · Ollama (local)</text>
+
+  <line x1="490" y1="72" x2="490" y2="98" stroke="#8a8a8a" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="280" y="100" width="420" height="56" rx="8" fill="#f4f1ee" stroke="#c15f3c" stroke-width="2"/>
+  <text x="490" y="123" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1a1a">mcpo gateway</text>
+  <text x="490" y="141" text-anchor="middle" font-size="11" fill="#c15f3c" font-weight="600">every call passes one governance gate</text>
+
+  <text x="490" y="186" text-anchor="middle" font-size="11.5" fill="#666666">one governed loop&#160;&#160;·&#160;&#160;discover&#160;→&#160;query&#160;→&#160;KQL&#160;→&#160;docs&#160;→&#160;remember</text>
+
+  <line x1="490" y1="156" x2="124" y2="208" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="490" y1="156" x2="307" y2="208" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="490" y1="156" x2="490" y2="208" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="490" y1="156" x2="673" y2="208" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="490" y1="156" x2="856" y2="208" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+
+  <rect x="40" y="208" width="168" height="96" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="56" y="230" font-size="10" fill="#8a8a8a" font-weight="600">1 · DISCOVER</text>
+  <text x="56" y="252" font-size="13.5" font-weight="700" fill="#1a1a1a">schema-scout</text>
+  <text x="56" y="276" font-size="11.5" fill="#c15f3c" font-weight="600">PII flagged</text>
+  <text x="56" y="292" font-size="10.5" fill="#666666">per column</text>
+
+  <rect x="223" y="208" width="168" height="96" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="239" y="230" font-size="10" fill="#8a8a8a" font-weight="600">2 · QUERY</text>
+  <text x="239" y="252" font-size="13.5" font-weight="700" fill="#1a1a1a">sql-steward</text>
+  <text x="239" y="276" font-size="11.5" fill="#c15f3c" font-weight="600">no run_sql</text>
+  <text x="239" y="292" font-size="10.5" fill="#666666">PII blocked · compiled</text>
+
+  <rect x="406" y="208" width="168" height="96" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="422" y="230" font-size="10" fill="#8a8a8a" font-weight="600">3 · KQL</text>
+  <text x="422" y="252" font-size="13.5" font-weight="700" fill="#1a1a1a">kql-sop</text>
+  <text x="422" y="276" font-size="11.5" fill="#c15f3c" font-weight="600">mutations refused</text>
+  <text x="422" y="292" font-size="10.5" fill="#666666">gatekeeper, not advice</text>
+
+  <rect x="589" y="208" width="168" height="96" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="605" y="230" font-size="10" fill="#8a8a8a" font-weight="600">4 · DOCUMENTS</text>
+  <text x="605" y="252" font-size="13.5" font-weight="700" fill="#1a1a1a">doc-steward</text>
+  <text x="605" y="276" font-size="11.5" fill="#c15f3c" font-weight="600">role-scoped</text>
+  <text x="605" y="292" font-size="10.5" fill="#666666">PII redacted</text>
+
+  <rect x="772" y="208" width="168" height="96" rx="8" fill="#ffffff" stroke="#cfcfcf" stroke-width="1.5"/>
+  <text x="788" y="230" font-size="10" fill="#8a8a8a" font-weight="600">5 · REMEMBER</text>
+  <text x="788" y="252" font-size="13.5" font-weight="700" fill="#1a1a1a">thread-recall</text>
+  <text x="788" y="276" font-size="11.5" fill="#c15f3c" font-weight="600">masked on write</text>
+  <text x="788" y="292" font-size="10.5" fill="#666666">thread-scoped</text>
+
+  <line x1="124" y1="304" x2="124" y2="340" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="307" y1="304" x2="307" y2="340" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="490" y1="304" x2="490" y2="340" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="673" y1="304" x2="673" y2="340" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+  <line x1="856" y1="304" x2="856" y2="340" stroke="#8a8a8a" stroke-width="1.2" marker-end="url(#ah)"/>
+
+  <rect x="52" y="340" width="144" height="34" rx="6" fill="#faf9f8" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="124" y="361" text-anchor="middle" font-size="11" fill="#666666">catalog</text>
+  <rect x="235" y="340" width="144" height="34" rx="6" fill="#faf9f8" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="307" y="361" text-anchor="middle" font-size="11" fill="#666666">SQLite / Postgres</text>
+  <rect x="418" y="340" width="144" height="34" rx="6" fill="#faf9f8" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="490" y="361" text-anchor="middle" font-size="11" fill="#666666">KQL cluster</text>
+  <rect x="601" y="340" width="144" height="34" rx="6" fill="#faf9f8" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="673" y="361" text-anchor="middle" font-size="11" fill="#666666">doc corpus</text>
+  <rect x="784" y="340" width="144" height="34" rx="6" fill="#faf9f8" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="856" y="361" text-anchor="middle" font-size="11" fill="#666666">memory db</text>
+
+  <line x1="40" y1="404" x2="940" y2="404" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="40" y="428" font-size="11.5" fill="#1a1a1a" font-weight="600">On-prem · nothing leaves the machine · every read audited</text>
+  <text x="940" y="428" text-anchor="end" font-size="10.5" fill="#c15f3c">accent = governance enforced</text>
+  <text x="40" y="446" font-size="10.5" fill="#8a8a8a">Swap any backend (SQLite→Postgres, validate-only→live cluster) in stack.env — the gates apply identically</text>
+</svg>
