@@ -64,10 +64,15 @@ than competing with it.
 
 ### Tier 2 backlog — strengthens, already planned
 
-- **pgvector for doc-steward and thread-recall.** Move off the hashing and
-  in-memory defaults to persistent semantic backends. Reuses Postgres.
-- **Context and cost budget across tools.** Extend sql-steward's per-role query
-  budget to a gateway-wide token and cost cap.
+- **pgvector for doc-steward. (done)** `doc-steward` now has a `PgVectorStore`
+  (persistent, real cosine search) with the role access-control filter pushed
+  into the SQL. Verified against a real pgvector container. Enable with
+  `DOC_STEWARD_STORE=pgvector`. thread-recall pgvector is the remaining half.
+- **Per-role data budget. (done)** Reframed from "tokens" — the gateway governs
+  tool calls, not LLM completions, so there is nothing to count in tokens. The
+  gateway tracks cumulative response bytes per role and passes it to OPA, which
+  denies once a role is over its `budget_bytes` (in `policy/roles.json`,
+  0 = unlimited). Budgets are policy-as-code, not a hardcoded number.
 - **An ingestion leg.** dlt to dbt to drt, or Dagster, so the stack covers
   load, model, and serve rather than serve only. A separate, larger demo.
 

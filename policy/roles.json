@@ -1,16 +1,20 @@
 {
   "roles": {
     "viewer": {
-      "tools": ["schema-scout/*", "doc-steward/search_docs"]
+      "tools": ["schema-scout/*", "doc-steward/search_docs"],
+      "budget_bytes": 100000
     },
     "analyst": {
-      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "kql-sop/*", "thread-recall/*"]
+      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "kql-sop/*", "thread-recall/*"],
+      "budget_bytes": 2000000
     },
     "finance": {
-      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "thread-recall/*"]
+      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "thread-recall/*"],
+      "budget_bytes": 3000
     },
     "manager": {
-      "tools": ["*"]
+      "tools": ["*"],
+      "budget_bytes": 0
     }
   }
 }

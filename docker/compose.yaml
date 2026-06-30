@@ -30,7 +30,6 @@ services:
       MCPO_INTERNAL_URL: http://mcpo:8766
       OPA_URL: http://opa:8181/v1/data/governed/decision
       GATEWAY_TOKENS: viewer-tok:viewer,analyst-tok:analyst,finance-tok:finance,manager-tok:manager
-      GATEWAY_BUDGET: "500"
       GATEWAY_AUDIT_DB: /app/logs/gateway-audit.db
       OTEL_SPAN_FILE: /app/logs/otel-spans.jsonl
     ports:

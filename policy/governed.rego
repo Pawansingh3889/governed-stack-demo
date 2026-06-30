@@ -32,9 +32,19 @@ needs_manager if {
 	input.role != "manager"
 }
 
+# Per-role data budget. The gateway passes the role's cumulative response bytes
+# as input.spent; a budget_bytes of 0 (or unset) means unlimited.
+budget := object.get(data.roles, [input.role, "budget_bytes"], 0)
+
+over_budget if {
+	budget > 0
+	object.get(input, ["spent"], 0) >= budget
+}
+
 allow if {
 	role_allows
 	not needs_manager
+	not over_budget
 }
 
 reason := "ok" if allow
@@ -44,6 +54,12 @@ reason := "role not permitted for this tool" if not role_allows
 reason := "control commands require the manager role" if {
 	role_allows
 	needs_manager
+}
+
+reason := "data budget exhausted for this role" if {
+	role_allows
+	not needs_manager
+	over_budget
 }
 
 decision := {"allow": allow, "reason": reason}

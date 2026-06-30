@@ -28,7 +28,6 @@ from fastapi.responses import JSONResponse, Response
 
 MCPO = os.environ.get("MCPO_INTERNAL_URL", "http://localhost:8766").rstrip("/")
 OPA_URL = os.environ.get("OPA_URL", "http://localhost:8181/v1/data/governed/decision")
-BUDGET = int(os.environ.get("GATEWAY_BUDGET", "500"))
 AUDIT_DB = os.environ.get("GATEWAY_AUDIT_DB", "logs/gateway-audit.db")
 
 
@@ -42,7 +41,9 @@ def _load_tokens() -> dict[str, str]:
 
 
 TOKENS = _load_tokens()
-_spent: dict[str, int] = defaultdict(int)
+# Cumulative response bytes per role; passed to OPA so the per-role data budget
+# (policy.roles[role].budget_bytes) is enforced as policy, not hardcoded here.
+_spent_bytes: dict[str, int] = defaultdict(int)
 
 
 def _setup_tracing():
@@ -109,8 +110,8 @@ def _audit(actor: str, server: str, tool: str, outcome: str, reason: str, status
         pass
 
 
-async def _decide(role: str, server: str, tool: str, args: dict) -> dict:
-    payload = {"input": {"role": role, "server": server, "tool": tool, "args": args}}
+async def _decide(role: str, server: str, tool: str, args: dict, spent: int) -> dict:
+    payload = {"input": {"role": role, "server": server, "tool": tool, "args": args, "spent": spent}}
     try:
         resp = await client.post(OPA_URL, json=payload)
         return resp.json().get("result", {"allow": False, "reason": "no policy result"})
@@ -136,13 +137,8 @@ async def call_tool(server: str, tool: str, request: Request):
         except Exception:
             args = {}
 
-        if _spent[role] >= BUDGET:
-            span.set_attribute("gov.decision", "deny")
-            span.set_attribute("gov.reason", "budget exceeded")
-            _audit(role, server, tool, "deny", "budget exceeded")
-            return JSONResponse({"detail": f"role '{role}' budget exceeded"}, status_code=429)
-
-        decision = await _decide(role, server, tool, args)
+        span.set_attribute("gov.spent_bytes", _spent_bytes[role])
+        decision = await _decide(role, server, tool, args, _spent_bytes[role])
         if not decision.get("allow"):
             span.set_attribute("gov.decision", "deny")
             span.set_attribute("gov.reason", decision.get("reason", ""))
@@ -152,10 +148,10 @@ async def call_tool(server: str, tool: str, request: Request):
                 status_code=403,
             )
 
-        _spent[role] += 1
         resp = await client.post(
             f"{MCPO}/{server}/{tool}", content=body, headers={"content-type": "application/json"}
         )
+        _spent_bytes[role] += len(resp.content)  # data egress counts toward the budget
         span.set_attribute("gov.decision", "allow")
         span.set_attribute("http.status_code", resp.status_code)
         _audit(role, server, tool, "allow", "forwarded", status=resp.status_code)
