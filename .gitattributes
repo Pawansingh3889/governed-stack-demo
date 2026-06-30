@@ -1,0 +1,4 @@
+# Shell scripts must stay LF so they run in WSL / Linux containers even when
+# checked out on Windows.
+*.sh text eol=lf
+docker/Dockerfile text eol=lf
