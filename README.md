@@ -82,6 +82,13 @@ Under Settings, Tools, add each server as an OpenAPI tool server
 (`http://localhost:8765/sql-steward`, and so on) with a gateway token as the API
 key, pick an Ollama model, and chat with the tools enabled.
 
+## Run in containers
+
+`stack.py` runs the stack as host processes. To run the governed backend (OPA +
+mcpo + gateway) as containers instead, see [docker/](docker/): build the wheels,
+`docker compose -f docker/compose.yaml up --build`, then `bash docker/smoke.sh`.
+Built and verified with Docker running natively in WSL2.
+
 ## Adapt it to real infrastructure
 
 Every backend is a line in `stack.env` (copy `stack.env.example`). Switching from

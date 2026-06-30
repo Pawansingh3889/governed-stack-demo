@@ -1,0 +1,41 @@
+# The governed stack as containers: OPA policy engine, mcpo (which spawns the
+# five MCP servers), and the governance gateway in front. Open WebUI is not here
+# (run it natively); this is the governed backend.
+#
+#   docker compose -f docker/compose.yaml up --build
+#   curl -H "Authorization: Bearer manager-tok" http://localhost:8765/sql-steward/openapi.json
+services:
+  opa:
+    image: openpolicyagent/opa:1.4.2
+    command: ["run", "--server", "--addr", "0.0.0.0:8181", "/policy"]
+    restart: unless-stopped
+    volumes:
+      - ../policy:/policy:ro
+
+  mcpo:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["mcpo", "--config", "/app/mcpo.docker.json", "--port", "8766"]
+    working_dir: /app
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["uvicorn", "gateway:app", "--host", "0.0.0.0", "--port", "8765"]
+    working_dir: /app
+    environment:
+      MCPO_INTERNAL_URL: http://mcpo:8766
+      OPA_URL: http://opa:8181/v1/data/governed/decision
+      GATEWAY_TOKENS: viewer-tok:viewer,analyst-tok:analyst,finance-tok:finance,manager-tok:manager
+      GATEWAY_BUDGET: "500"
+      GATEWAY_AUDIT_DB: /app/logs/gateway-audit.db
+      OTEL_SPAN_FILE: /app/logs/otel-spans.jsonl
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
+    depends_on:
+      - opa
+      - mcpo

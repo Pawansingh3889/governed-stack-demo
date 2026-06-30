@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "sql-steward": {
+      "command": "python",
+      "args": ["-m", "sql_steward.server"],
+      "env": {
+        "SQL_STEWARD_LAYER": "/app/data/sql/semantic.yaml",
+        "SQL_STEWARD_DB_URL": "sqlite:////app/data/sql/demo.db",
+        "SQL_STEWARD_AUDIT_DB": "/app/logs/sql-steward-audit.db"
+      }
+    },
+    "kql-sop": {
+      "command": "python",
+      "args": ["-m", "kql_sop.mcp_server"]
+    },
+    "doc-steward": {
+      "command": "python",
+      "args": ["-m", "doc_steward.mcp_server"],
+      "env": { "DOC_STEWARD_CORPUS": "/app/data/docs/corpus.json" }
+    },
+    "schema-scout": {
+      "command": "python",
+      "args": ["-m", "schema_scout.mcp_server", "--catalog", "/app/data/schema/catalog.json"]
+    },
+    "thread-recall": {
+      "command": "python",
+      "args": ["-m", "thread_recall.mcp_server"],
+      "env": {
+        "THREAD_RECALL_DB": "/app/logs/recall-mem.db",
+        "THREAD_RECALL_MASK": "1"
+      }
+    }
+  }
+}

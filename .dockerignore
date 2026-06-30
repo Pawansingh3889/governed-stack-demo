@@ -1,0 +1,16 @@
+.venv/
+.opa/
+.stack/
+logs/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/sql/demo.db
+data/schema/
+mcpo.config.json
+stack.env
+products.json
+webui.db
+.webui_secret_key

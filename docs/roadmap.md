@@ -53,9 +53,11 @@ than competing with it.
   and reason. With `OTEL_EXPORTER_OTLP_ENDPOINT` set, spans ship to a collector
   (Jaeger, Tempo); blank writes them to `logs/otel-spans.jsonl`. agent-blackbox
   stays the tamper-evident record; OTel is the interoperable export.
-- **Headless packaging (systemd / Docker).** Run the stack as a permanent
-  on-prem service rather than `stack.py` by hand. Still open; Docker is currently
-  broken on the dev machine (Model Runner bug), systemd is Linux-only.
+- **Docker packaging. (done)** `docker/` has a Dockerfile, a three-service
+  compose (opa + mcpo + gateway), and a smoke test. Built and verified in real
+  containers (8/8 governance checks) using Docker running natively in WSL2, since
+  Docker Desktop is broken on this machine by a corporate security filter driver.
+  See `docker/README.md`.
 - **Inference speed.** Reframed: vLLM needs a GPU the dev laptop does not have,
   so it would not help. The real fix is a smaller tool-capable model (mistral) or
   llama-swap. Treat the chat as garnish; `stack.py verify` is the fast proof.
