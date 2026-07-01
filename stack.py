@@ -111,6 +111,14 @@ def render_config(cfg: dict[str, str]) -> Path:
             tr_env["THREAD_RECALL_OLLAMA_HOST"] = cfg.get("DOC_STEWARD_OLLAMA_HOST", "http://localhost:11434")
             tr_env["THREAD_RECALL_OLLAMA_MODEL"] = cfg.get("DOC_STEWARD_OLLAMA_MODEL", "nomic-embed-text")
         servers["thread-recall"] = {"command": py, "args": ["-m", "thread_recall.mcp_server"], "env": tr_env}
+    comp_db = cfg.get("COMPLIANCE_DB", "")
+    if comp_db:
+        comp_env = {
+            "COMPLIANCE_DB": comp_db,
+            "COMPLIANCE_AUDIT": f"{ROOT.as_posix()}/logs/compliance-audit.jsonl",
+            "PYTHONPATH": str(ROOT),
+        }
+        servers["compliance-check"] = {"command": py, "args": ["-m", "compliance_check.mcp_server"], "env": comp_env}
 
     CONFIG_FILE.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
     return CONFIG_FILE
@@ -276,6 +284,8 @@ def _print_backends(cfg: dict[str, str]) -> None:
     if cfg.get("THREAD_RECALL_DB"):
         mask = "masked" if cfg.get("THREAD_RECALL_MASK", "1").lower() in ("1", "true", "yes", "on") else "unmasked"
         print(f"  thread-recall: SQLite memory ({mask} on write)")
+    if cfg.get("COMPLIANCE_DB"):
+        print("  compliance-check: deterministic verdicts (fail-closed, hash-chain audited)")
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -340,6 +350,21 @@ def cmd_verify(args: argparse.Namespace) -> int:
         text = " ".join(r["content"] for r in (rec or {}).get("results", []))
         check("thread-recall masks PII on write", (rec or {}).get("count", 0) > 0 and "@example.com" not in text)
         call("/thread-recall/forget", {"thread_id": tid})
+    if cfg.get("COMPLIANCE_DB"):
+        code, verdict = request(f"{base}/compliance-check/batch_compliance",
+                                 {"batch_id": "B-1003"}, token=tokens.get("viewer"))
+        allergen_fail = any(
+            f.get("check") == "allergen_crosscheck" and not f.get("passed")
+            for f in (verdict or {}).get("findings", [])
+        )
+        check("compliance-check flags an undeclared allergen (verdict computed pre-LLM)",
+              code == 200 and (verdict or {}).get("compliant") is False and allergen_fail)
+        temp = call("/compliance-check/batch_compliance", {"batch_id": "B-1002"})
+        check("compliance-check flags a cold-chain breach",
+              (temp or {}).get("compliant") is False)
+        ghost = call("/compliance-check/batch_compliance", {"batch_id": "B-NOPE"})
+        check("compliance-check fails closed on an unknown batch",
+              (ghost or {}).get("compliant") is False)
 
     # Data budget: finance has a tight budget_bytes in policy/roles.json, so a
     # short run of calls exhausts it and OPA denies further ones.

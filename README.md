@@ -5,7 +5,7 @@ and a document corpus, where every answer goes through a governance gate. Unsafe
 queries are refused, PII is blocked or redacted, document access is scoped by
 role, and every read is audited. Nothing leaves the machine.
 
-It composes five MCP servers that each enforce the same pattern on a different
+It composes six MCP servers that each enforce the same pattern on a different
 surface, in the order an agent works through a question:
 
 | Server | Surface | Guarantee it enforces |
@@ -15,11 +15,12 @@ surface, in the order an agent works through a question:
 | kql-sop | KQL | A gatekeeper lints before it runs. A query that mutates data or schema, or otherwise trips a blocking rule, is never executed. |
 | doc-steward | Documents | Retrieval returns only chunks the caller's role may see, with PII redacted before the model reads it. |
 | thread-recall | Remember | Thread-scoped remember/recall. PII is masked before anything is stored, so long-term memory never retains raw PII, and one thread never recalls another's. |
+| compliance-check | Decide | A composite verdict tool: the multi-step validation (cold-chain temperatures crossed with an allergen declaration check) runs deterministically in Python before the model sees anything. Verdicts fail closed and land in a hash-chained audit log; the model can only narrate a decision the code already made. |
 
-The five are wired into [Open WebUI](https://github.com/open-webui/open-webui)
+The six are wired into [Open WebUI](https://github.com/open-webui/open-webui)
 through [mcpo](https://github.com/open-webui/mcpo), which exposes each MCP server
-as an OpenAPI tool the chat model can call. (schema-scout and thread-recall are
-optional, enabled by config.)
+as an OpenAPI tool the chat model can call. (schema-scout, thread-recall, and
+compliance-check are optional, enabled by config.)
 
 ```mermaid
 flowchart TD
@@ -30,11 +31,13 @@ flowchart TD
     G --> S3["kql-sop<br/>KQL · mutations refused"]
     G --> S4["doc-steward<br/>docs · role-scoped, redacted"]
     G --> S5["thread-recall<br/>remember · masked on write"]
+    G --> S6["compliance-check<br/>decide · verdict computed pre-LLM"]
     S1 --> B1[("catalog")]
     S2 --> B2[("SQLite / Postgres")]
     S3 --> B3[("KQL cluster")]
     S4 --> B4[("doc corpus")]
     S5 --> B5[("memory db")]
+    S6 --> B6[("batch evidence")]
 ```
 
 Two gates per call, on purpose. The gateway authenticates the caller (token to
@@ -43,8 +46,8 @@ a per-role budget, writes a tamper-evident audit record, and exports the decisio
 as an OpenTelemetry span. Then the in-tool
 gates run underneath (no run_sql, mutations refused, PII redacted), so even a
 policy mistake cannot let a tool misbehave. The loop is discover → query → KQL →
-docs → remember. Nothing leaves the machine, and any backend swaps in `stack.env`
-without changing the gates. Rendered diagrams are in [docs/](docs/).
+docs → remember → decide. Nothing leaves the machine, and any backend swaps in
+`stack.env` without changing the gates. Rendered diagrams are in [docs/](docs/).
 
 ## Prerequisites
 
