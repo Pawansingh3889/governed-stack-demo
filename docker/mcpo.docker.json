@@ -29,6 +29,15 @@
         "THREAD_RECALL_DB": "/app/logs/recall-mem.db",
         "THREAD_RECALL_MASK": "1"
       }
+    },
+    "compliance-check": {
+      "command": "python",
+      "args": ["-m", "compliance_check.mcp_server"],
+      "env": {
+        "COMPLIANCE_DB": "/app/data/compliance/demo.db",
+        "COMPLIANCE_AUDIT": "/app/logs/compliance-audit.jsonl",
+        "PYTHONPATH": "/app"
+      }
     }
   }
 }

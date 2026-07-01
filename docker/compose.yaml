@@ -1,5 +1,5 @@
 # The governed stack as containers: OPA policy engine, mcpo (which spawns the
-# five MCP servers), and the governance gateway in front. Open WebUI is not here
+# six MCP servers), and the governance gateway in front. Open WebUI is not here
 # (run it natively); this is the governed backend.
 #
 #   docker compose -f docker/compose.yaml up --build
@@ -30,6 +30,7 @@ services:
       MCPO_INTERNAL_URL: http://mcpo:8766
       OPA_URL: http://opa:8181/v1/data/governed/decision
       GATEWAY_TOKENS: viewer-tok:viewer,analyst-tok:analyst,finance-tok:finance,manager-tok:manager
+      GATEWAY_CACHE_TTL: "300"
       GATEWAY_AUDIT_DB: /app/logs/gateway-audit.db
       OTEL_SPAN_FILE: /app/logs/otel-spans.jsonl
     ports:

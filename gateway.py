@@ -14,12 +14,16 @@ Configuration (environment):
   GATEWAY_TOKENS      comma list of token:role pairs
   GATEWAY_BUDGET      max allowed calls per role (default 500)
   GATEWAY_AUDIT_DB    audit ledger path (default logs/gateway-audit.db)
+  GATEWAY_CACHE_TTL   governed response cache TTL in seconds (default 0 = off)
+  GATEWAY_CACHE_MAX   max cached responses (default 512)
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import time
 from collections import defaultdict
 
 import httpx
@@ -44,6 +48,21 @@ TOKENS = _load_tokens()
 # Cumulative response bytes per role; passed to OPA so the per-role data budget
 # (policy.roles[role].budget_bytes) is enforced as policy, not hardcoded here.
 _spent_bytes: dict[str, int] = defaultdict(int)
+
+# Governed response cache. Exact-match only: the key is the role plus the
+# canonical call, never an embedding ("similar question" is not "same answer",
+# and serving product A's cached result for a product B question is exactly the
+# failure a governed stack must not have). A hit still runs auth, policy,
+# budget, and audit -- only the forward to mcpo is skipped -- so a revoked
+# permission or an exhausted budget cuts off cached data too. Set the TTL to
+# your ETL micro-batch interval and staleness is bounded by pipeline cadence.
+CACHE_TTL = int(os.environ.get("GATEWAY_CACHE_TTL", "0") or 0)
+CACHE_MAX = int(os.environ.get("GATEWAY_CACHE_MAX", "512") or 512)
+_cache: dict[str, tuple[float, bytes, str]] = {}
+
+
+def _cache_key(role: str, server: str, tool: str, args: dict) -> str:
+    return hashlib.sha256(json.dumps([role, server, tool, args], sort_keys=True).encode()).hexdigest()
 
 
 def _setup_tracing():
@@ -148,17 +167,39 @@ async def call_tool(server: str, tool: str, request: Request):
                 status_code=403,
             )
 
+        key = _cache_key(role, server, tool, args)
+        if CACHE_TTL > 0:
+            hit = _cache.get(key)
+            if hit and hit[0] > time.time():
+                _spent_bytes[role] += len(hit[1])  # cached egress is still egress
+                span.set_attribute("gov.decision", "allow")
+                span.set_attribute("gov.cache", "hit")
+                _audit(role, server, tool, "allow", "served from governed cache", status=200)
+                return Response(content=hit[1], status_code=200, media_type=hit[2],
+                                headers={"x-gov-cache": "hit"})
+
         resp = await client.post(
             f"{MCPO}/{server}/{tool}", content=body, headers={"content-type": "application/json"}
         )
         _spent_bytes[role] += len(resp.content)  # data egress counts toward the budget
         span.set_attribute("gov.decision", "allow")
+        span.set_attribute("gov.cache", "miss" if CACHE_TTL > 0 else "off")
         span.set_attribute("http.status_code", resp.status_code)
         _audit(role, server, tool, "allow", "forwarded", status=resp.status_code)
+        if CACHE_TTL > 0 and resp.status_code == 200:
+            if len(_cache) >= CACHE_MAX:
+                now = time.time()
+                for stale in [k for k, v in _cache.items() if v[0] <= now]:
+                    _cache.pop(stale, None)
+                while len(_cache) >= CACHE_MAX:  # still full -> drop oldest entries
+                    _cache.pop(next(iter(_cache)), None)
+            _cache[key] = (time.time() + CACHE_TTL, resp.content,
+                           resp.headers.get("content-type", "application/json"))
         return Response(
             content=resp.content,
             status_code=resp.status_code,
             media_type=resp.headers.get("content-type", "application/json"),
+            headers={"x-gov-cache": "miss"} if CACHE_TTL > 0 else None,
         )
 
 

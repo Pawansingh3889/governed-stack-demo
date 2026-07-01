@@ -165,6 +165,12 @@ def gateway_base(cfg: dict[str, str]) -> str:
 
 def request(url: str, body=None, token: str | None = None, method: str = "POST"):
     """Return (status_code, json_or_none); does not raise on 4xx/5xx."""
+    code, data, _ = request_full(url, body, token, method)
+    return code, data
+
+
+def request_full(url: str, body=None, token: str | None = None, method: str = "POST"):
+    """Return (status_code, json_or_none, response_headers); does not raise on 4xx/5xx."""
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -172,12 +178,12 @@ def request(url: str, body=None, token: str | None = None, method: str = "POST")
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, json.loads(resp.read() or b"null")
+            return resp.status, json.loads(resp.read() or b"null"), dict(resp.headers)
     except urllib.error.HTTPError as exc:
         try:
-            return exc.code, json.loads(exc.read() or b"null")
+            return exc.code, json.loads(exc.read() or b"null"), dict(exc.headers or {})
         except Exception:
-            return exc.code, None
+            return exc.code, None, {}
 
 
 def gateway_ready(cfg: dict[str, str]) -> bool:
@@ -236,6 +242,7 @@ def cmd_up(args: argparse.Namespace) -> int:
                 "MCPO_INTERNAL_URL": f"http://localhost:{mport}",
                 "OPA_URL": f"http://localhost:{oport}/v1/data/governed/decision",
                 "GATEWAY_TOKENS": cfg.get("GATEWAY_TOKENS", ""),
+                "GATEWAY_CACHE_TTL": cfg.get("GATEWAY_CACHE_TTL", "0"),
                 "GATEWAY_AUDIT_DB": f"{ROOT.as_posix()}/logs/gateway-audit.db",
                 "OTEL_EXPORTER_OTLP_ENDPOINT": cfg.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
                 "OTEL_SPAN_FILE": f"{ROOT.as_posix()}/logs/otel-spans.jsonl",
@@ -286,6 +293,9 @@ def _print_backends(cfg: dict[str, str]) -> None:
         print(f"  thread-recall: SQLite memory ({mask} on write)")
     if cfg.get("COMPLIANCE_DB"):
         print("  compliance-check: deterministic verdicts (fail-closed, hash-chain audited)")
+    ttl = cfg.get("GATEWAY_CACHE_TTL", "0")
+    if ttl not in ("", "0"):
+        print(f"  gateway-cache: exact-match, TTL {ttl}s (policy re-checked on every hit)")
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -365,6 +375,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
         ghost = call("/compliance-check/batch_compliance", {"batch_id": "B-NOPE"})
         check("compliance-check fails closed on an unknown batch",
               (ghost or {}).get("compliant") is False)
+
+    if cfg.get("GATEWAY_CACHE_TTL", "0") not in ("", "0"):
+        print("\ngoverned cache (exact-match, policy re-checked on hits)")
+        call("/sql-steward/get_metric", {"metric": "mrr_total"})  # prime the cache
+        code, _, hdrs = request_full(f"{base}/sql-steward/get_metric", {"metric": "mrr_total"}, token=mgr)
+        hdrs = {k.lower(): v for k, v in hdrs.items()}
+        check("gateway serves a repeat call from the cache", code == 200 and hdrs.get("x-gov-cache") == "hit")
+        code, _ = request(f"{base}/sql-steward/get_metric", {"metric": "mrr_total"}, token=tokens.get("viewer"))
+        check("a cached response never bypasses policy (viewer stays denied)", code == 403)
 
     # Data budget: finance has a tight budget_bytes in policy/roles.json, so a
     # short run of calls exhausts it and OPA denies further ones.
