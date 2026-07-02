@@ -16,6 +16,7 @@ Configuration (environment):
   GATEWAY_AUDIT_DB    audit ledger path (default logs/gateway-audit.db)
   GATEWAY_CACHE_TTL   governed response cache TTL in seconds (default 0 = off)
   GATEWAY_CACHE_MAX   max cached responses (default 512)
+  GATEWAY_NATIVE_SERVERS  server=url pairs for native Streamable HTTP MCP servers
 """
 
 from __future__ import annotations
@@ -136,6 +137,89 @@ async def _decide(role: str, server: str, tool: str, args: dict, spent: int) -> 
         return resp.json().get("result", {"allow": False, "reason": "no policy result"})
     except Exception as exc:  # OPA down -> fail closed
         return {"allow": False, "reason": f"policy engine unreachable: {exc}"}
+
+
+# Servers also reachable natively over Streamable HTTP (server=url pairs).
+# The /{server}/mcp route below governs the raw MCP protocol: a tools/call is
+# authenticated, policy-checked, budgeted, and audited exactly like the OpenAPI
+# path, so a native MCP client gets no side door around the governance.
+def _load_native() -> dict[str, str]:
+    out: dict[str, str] = {}
+    for pair in os.environ.get("GATEWAY_NATIVE_SERVERS", "").split(","):
+        if "=" in pair:
+            name, url = pair.split("=", 1)
+            out[name.strip()] = url.strip()
+    return out
+
+
+NATIVE_MCP = _load_native()
+_MCP_HEADERS = ("mcp-session-id", "mcp-protocol-version")
+
+
+def _rpc_error(msg_id, reason: str) -> JSONResponse:
+    return JSONResponse(
+        {"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32001, "message": f"denied by policy: {reason}"}}
+    )
+
+
+@app.post("/{server}/mcp")
+async def call_mcp(server: str, request: Request):
+    url = NATIVE_MCP.get(server)
+    if url is None:
+        return JSONResponse({"detail": f"no native MCP endpoint for '{server}'"}, status_code=404)
+    role = _role(request)
+    if role is None:
+        return JSONResponse({"detail": "unauthenticated: provide a valid token"}, status_code=401)
+
+    body = await request.body()
+    try:
+        msg = json.loads(body) if body else {}
+    except Exception:
+        msg = {}
+
+    fwd_headers = {
+        "content-type": "application/json",
+        "accept": request.headers.get("accept", "application/json, text/event-stream"),
+    }
+    for h in _MCP_HEADERS:
+        if request.headers.get(h):
+            fwd_headers[h] = request.headers[h]
+
+    method = msg.get("method", "")
+    if method != "tools/call":
+        # Handshake and discovery (initialize, tools/list, notifications):
+        # authenticated passthrough, no policy needed -- nothing reads data.
+        resp = await client.post(url, content=body, headers=fwd_headers)
+        out = {h: resp.headers[h] for h in _MCP_HEADERS if resp.headers.get(h)}
+        return Response(content=resp.content, status_code=resp.status_code,
+                        media_type=resp.headers.get("content-type", "application/json"), headers=out)
+
+    tool = (msg.get("params") or {}).get("name", "")
+    args = (msg.get("params") or {}).get("arguments") or {}
+    with tracer.start_as_current_span(f"execute_tool {server}/{tool}") as span:
+        span.set_attribute("gen_ai.operation.name", "execute_tool")
+        span.set_attribute("gen_ai.tool.type", "function")
+        span.set_attribute("gen_ai.tool.name", tool)
+        span.set_attribute("gov.server", server)
+        span.set_attribute("gov.tool", tool)
+        span.set_attribute("gov.role", role)
+        span.set_attribute("gov.transport", "mcp")
+
+        decision = await _decide(role, server, tool, args, _spent_bytes[role])
+        if not decision.get("allow"):
+            span.set_attribute("gov.decision", "deny")
+            span.set_attribute("gov.reason", decision.get("reason", ""))
+            _audit(role, server, tool, "deny", decision.get("reason", ""))
+            return _rpc_error(msg.get("id"), decision.get("reason", ""))
+
+        resp = await client.post(url, content=body, headers=fwd_headers)
+        _spent_bytes[role] += len(resp.content)
+        span.set_attribute("gov.decision", "allow")
+        span.set_attribute("http.status_code", resp.status_code)
+        _audit(role, server, tool, "allow", "forwarded (mcp)", status=resp.status_code)
+        out = {h: resp.headers[h] for h in _MCP_HEADERS if resp.headers.get(h)}
+        return Response(content=resp.content, status_code=resp.status_code,
+                        media_type=resp.headers.get("content-type", "application/json"), headers=out)
 
 
 @app.post("/{server}/{tool}")

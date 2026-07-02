@@ -78,7 +78,25 @@ def server_names() -> list[str]:
     return ["sql-steward", "kql-sop", "doc-steward"]
 
 
-def render_config(cfg: dict[str, str]) -> Path:
+# Servers that can run natively over Streamable HTTP (module exposing `mcp`).
+# schema-scout is stdio-only for now: its catalog comes in as an argv flag.
+NATIVE_TARGETS = {
+    "sql-steward": "sql_steward.server",
+    "kql-sop": "kql_sop.mcp_server",
+    "doc-steward": "doc_steward.mcp_server",
+    "thread-recall": "thread_recall.mcp_server",
+    "compliance-check": "compliance_check.mcp_server",
+}
+
+
+def native_map(cfg: dict[str, str]) -> dict[str, int]:
+    """server name -> local port, for servers configured to run over HTTP."""
+    base = int(cfg.get("NATIVE_PORT_BASE", "8791") or 8791)
+    wanted = [s.strip() for s in cfg.get("NATIVE_MCP_SERVERS", "").split(",") if s.strip()]
+    return {name: base + i for i, name in enumerate(sorted(set(wanted))) if name in NATIVE_TARGETS}
+
+
+def server_specs(cfg: dict[str, str]) -> dict:
     py = venv_python()
     sql_env = {
         "SQL_STEWARD_LAYER": cfg["SQL_STEWARD_LAYER"],
@@ -120,6 +138,16 @@ def render_config(cfg: dict[str, str]) -> Path:
         }
         servers["compliance-check"] = {"command": py, "args": ["-m", "compliance_check.mcp_server"], "env": comp_env}
 
+    return servers
+
+
+def render_config(cfg: dict[str, str]) -> Path:
+    servers = server_specs(cfg)
+    # Servers running natively over Streamable HTTP: mcpo consumes their URL
+    # instead of spawning them, so one process serves both mcpo and MCP clients.
+    for name, port in native_map(cfg).items():
+        if name in servers:
+            servers[name] = {"type": "streamable-http", "url": f"http://localhost:{port}/mcp"}
     CONFIG_FILE.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
     return CONFIG_FILE
 
@@ -233,6 +261,24 @@ def cmd_up(args: argparse.Namespace) -> int:
 
         mport = cfg.get("MCPO_PORT", "8766")
         oport = cfg.get("OPA_PORT", "8181")
+
+        specs = server_specs(cfg)
+        natives = native_map(cfg)
+        for name, port in natives.items():
+            spec = specs.get(name)
+            if spec is None:
+                continue
+            env = {**spec.get("env", {}), "PYTHONPATH": str(ROOT)}
+            _spawn(
+                f"native-{name}",
+                [venv_python(), str(ROOT / "native_runner.py"), NATIVE_TARGETS[name], str(port)],
+                env=env,
+            )
+        for name, port in natives.items():
+            if not _wait_port(port, 30):
+                print(f"native {name} did not open port {port}; see .stack/native-{name}.log", file=sys.stderr)
+                return 2
+
         _spawn("mcpo", [venv_bin("mcpo"), "--config", str(CONFIG_FILE), "--port", mport])
         _spawn("opa", [opa_bin(), "run", "--server", "--addr", f"localhost:{oport}", "policy/"])
         _spawn(
@@ -243,6 +289,9 @@ def cmd_up(args: argparse.Namespace) -> int:
                 "OPA_URL": f"http://localhost:{oport}/v1/data/governed/decision",
                 "GATEWAY_TOKENS": cfg.get("GATEWAY_TOKENS", ""),
                 "GATEWAY_CACHE_TTL": cfg.get("GATEWAY_CACHE_TTL", "0"),
+                "GATEWAY_NATIVE_SERVERS": ",".join(
+                    f"{n}=http://localhost:{p}/mcp" for n, p in native_map(cfg).items()
+                ),
                 "GATEWAY_AUDIT_DB": f"{ROOT.as_posix()}/logs/gateway-audit.db",
                 "OTEL_EXPORTER_OTLP_ENDPOINT": cfg.get("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
                 "OTEL_SPAN_FILE": f"{ROOT.as_posix()}/logs/otel-spans.jsonl",
@@ -269,8 +318,22 @@ def cmd_up(args: argparse.Namespace) -> int:
 def cmd_down(args: argparse.Namespace) -> int:
     for name in SERVICES:
         _stop(name)
-    print("Stopped gateway, OPA, and mcpo.")
+    for pf in RUN_DIR.glob("native-*.pid"):
+        _stop(pf.stem)
+    print("Stopped gateway, OPA, mcpo, and any native MCP servers.")
     return 0
+
+
+def _wait_port(port: int, seconds: int) -> bool:
+    import socket
+
+    for _ in range(seconds * 2):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.5)
+    return False
 
 
 def _print_backends(cfg: dict[str, str]) -> None:
@@ -296,6 +359,10 @@ def _print_backends(cfg: dict[str, str]) -> None:
     ttl = cfg.get("GATEWAY_CACHE_TTL", "0")
     if ttl not in ("", "0"):
         print(f"  gateway-cache: exact-match, TTL {ttl}s (policy re-checked on every hit)")
+    natives = native_map(cfg)
+    if natives:
+        names = ", ".join(f"{n} (:{p})" for n, p in natives.items())
+        print(f"  native-mcp   : Streamable HTTP, governed at /<server>/mcp — {names}")
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -375,6 +442,33 @@ def cmd_verify(args: argparse.Namespace) -> int:
         ghost = call("/compliance-check/batch_compliance", {"batch_id": "B-NOPE"})
         check("compliance-check fails closed on an unknown batch",
               (ghost or {}).get("compliant") is False)
+
+    natives = native_map(cfg)
+    if "compliance-check" in natives and cfg.get("COMPLIANCE_DB"):
+        print("\nnative MCP (Streamable HTTP through the gateway)")
+
+        def mcp_call(token: str | None, batch: str):
+            body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": "batch_compliance", "arguments": {"batch_id": batch}}}
+            headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(f"{base}/compliance-check/mcp",
+                                          data=json.dumps(body).encode(), headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return resp.status, resp.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as exc:
+                return exc.code, exc.read().decode("utf-8", "replace")
+
+        code, text = mcp_call(tokens.get("viewer"), "B-1003")
+        check("a native MCP tools/call flows through governance (viewer, 200)",
+              code == 200 and '"compliant"' in text and "false" in text)
+        code, text = mcp_call(tokens.get("finance"), "B-1003")
+        check("the MCP route is no side door (finance denied by policy)",
+              "denied by policy" in text)
+        code, text = mcp_call(None, "B-1003")
+        check("the MCP route rejects an unauthenticated call (401)", code == 401)
 
     if cfg.get("GATEWAY_CACHE_TTL", "0") not in ("", "0"):
         print("\ngoverned cache (exact-match, policy re-checked on hits)")

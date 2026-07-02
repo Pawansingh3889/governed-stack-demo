@@ -20,7 +20,10 @@ surface, in the order an agent works through a question:
 The six are wired into [Open WebUI](https://github.com/open-webui/open-webui)
 through [mcpo](https://github.com/open-webui/mcpo), which exposes each MCP server
 as an OpenAPI tool the chat model can call. (schema-scout, thread-recall, and
-compliance-check are optional, enabled by config.)
+compliance-check are optional, enabled by config.) Servers listed in
+`NATIVE_MCP_SERVERS` also run natively over Streamable HTTP, and the gateway
+governs the raw MCP protocol at `/<server>/mcp` — a native MCP client gets the
+same auth, policy, budget, and audit as the OpenAPI path, not a side door.
 
 ```mermaid
 flowchart TD
