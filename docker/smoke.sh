@@ -37,4 +37,17 @@ has "data-quality readiness ok" \
 has "doc-steward redacts PII" \
     "$(curl -s -X POST "$B/doc-steward/search_docs" -H 'Authorization: Bearer manager-tok' -H "$JSON" -d '{"query":"IT support","role":"viewer","k":1}')" REDACTED
 
+has "compliance-check flags an undeclared allergen (viewer verdict)" \
+    "$(curl -s -X POST "$B/compliance-check/batch_compliance" -H 'Authorization: Bearer viewer-tok' -H "$JSON" -d '{"batch_id":"B-1003"}')" '"compliant":false'
+has "compliance-check fails closed on an unknown batch" \
+    "$(curl -s -X POST "$B/compliance-check/batch_compliance" -H 'Authorization: Bearer manager-tok' -H "$JSON" -d '{"batch_id":"B-NOPE"}')" '"compliant":false'
+
+# Governed cache: prime once, then the repeat call must come back as a hit --
+# and the same cached call must still be denied for a role policy forbids.
+curl -s -o /dev/null -X POST "$B/sql-steward/get_metric" -H 'Authorization: Bearer manager-tok' -H "$JSON" -d '{"metric":"mrr_total"}'
+has "repeat call served from the governed cache" \
+    "$(curl -s -D - -o /dev/null -X POST "$B/sql-steward/get_metric" -H 'Authorization: Bearer manager-tok' -H "$JSON" -d '{"metric":"mrr_total"}')" 'x-gov-cache: hit'
+ck "a cached response never bypasses policy (viewer still 403)" \
+   "$(code -X POST "$B/sql-steward/get_metric" -H 'Authorization: Bearer viewer-tok' -H "$JSON" -d '{"metric":"mrr_total"}')" 403
+
 echo "$pass passed, $fail failed"

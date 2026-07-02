@@ -12,20 +12,22 @@ Open WebUI (host) → gateway :8765 → mcpo (internal) → five MCP servers
 
 ## Build and run
 
-The five servers and their governance libraries are not on PyPI, so wheels are
-built first, then the image installs them:
+Five servers and their governance libraries are not on PyPI, so wheels are
+built first, then the image installs them (compliance-check lives in this repo
+and copies straight in):
 
 ```bash
 # from the repo root
 bash docker/build-wheels.sh                       # builds docker/wheels/*.whl
 docker compose -f docker/compose.yaml up --build -d
-bash docker/smoke.sh                              # 8 governance checks through the gateway
+bash docker/smoke.sh                              # 12 governance checks through the gateway
 ```
 
 `smoke.sh` confirms both layers in the containers: an unauthenticated call is
 rejected, OPA denies a viewer the metric tool and an analyst a KQL control
-command (manager only), and the in-tool gates still hold (PII blocked, mutations
-refused, data-quality readiness, document redaction).
+command (manager only), the in-tool gates still hold (PII blocked, mutations
+refused, data-quality readiness, document redaction), compliance verdicts fail
+closed, and the governed cache serves repeats without ever bypassing policy.
 
 Call it like Open WebUI would, with a token as the API key:
 
