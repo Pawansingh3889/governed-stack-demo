@@ -56,7 +56,10 @@ policy, budget, and audit, so a revoked permission cuts off cached data too. The
 gates run underneath (no run_sql, mutations refused, PII redacted), so even a
 policy mistake cannot let a tool misbehave. The loop is discover → query → KQL →
 docs → remember → decide. Nothing leaves the machine, and any backend swaps in
-`stack.env` without changing the gates. Rendered diagrams are in [docs/](docs/).
+`stack.env` without changing the gates. Rendered diagrams are in [docs/](docs/), and
+[notebooks/governed_stack_tour.ipynb](notebooks/governed_stack_tour.ipynb) walks the
+running stack from a Jupyter notebook: the same call under three roles, a PII
+refusal, a compliance verdict, and charts over the stack's own audit trail.
 
 ## Prerequisites
 
