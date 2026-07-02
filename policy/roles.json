@@ -15,6 +15,10 @@
     "manager": {
       "tools": ["*"],
       "budget_bytes": 0
+    },
+    "administrator": {
+      "tools": ["*"],
+      "budget_bytes": 0
     }
   }
 }

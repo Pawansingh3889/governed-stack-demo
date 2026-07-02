@@ -1,6 +1,7 @@
 # Gateway authorization policy. Evaluated by OPA for every tool call, before the
 # request reaches mcpo and the in-tool gates. Default deny: a role may call only
-# the tools its allow-list permits, and KQL control commands need the manager role.
+# the tools its allow-list permits, and KQL control commands need an operator
+# role (manager or administrator).
 package governed
 
 default allow := false
@@ -27,9 +28,12 @@ is_control_command if {
 	startswith(trim_space(query), ".")
 }
 
+# Control commands are for operators of the system, not ordinary data roles.
+control_roles := {"manager", "administrator"}
+
 needs_manager if {
 	is_control_command
-	input.role != "manager"
+	not control_roles[input.role]
 }
 
 # Per-role data budget. The gateway passes the role's cumulative response bytes
