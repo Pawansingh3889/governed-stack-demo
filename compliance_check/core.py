@@ -66,7 +66,28 @@ def check_temperature(readings: list[dict]) -> Finding:
     return Finding("cold_chain", True, f"all {len(readings)} readings within limit")
 
 
-def check_allergens(declared: set[str], line_present: set[str]) -> Finding:
+def check_allergens(declared: set[str], line_present: set[str], taxonomy=None) -> Finding:
+    """Cross-check line allergens against the product declaration.
+
+    With a taxonomy, both sides are canonicalized first (Open Food Facts
+    allergen ids), so "Lactose" on the line matches a "Milk" declaration
+    instead of false-alarming, and "Barley" is caught by a "Gluten"
+    declaration. Unknown names still participate via raw: fallback ids.
+    """
+    if taxonomy is not None and taxonomy.loaded:
+        declared_ids = {taxonomy.canonicalize(a) for a in declared}
+        line_ids = {taxonomy.canonicalize(a) for a in line_present}
+        undeclared = sorted(line_ids - declared_ids)
+        if undeclared:
+            return Finding(
+                "allergen_crosscheck",
+                False,
+                "allergen(s) present on the line but not declared on the product",
+                [f"{taxonomy.display(i)} ({i})" for i in undeclared],
+            )
+        return Finding("allergen_crosscheck", True,
+                       "no undeclared allergen exposure (names canonicalized via the Open Food Facts taxonomy)")
+
     undeclared = sorted(line_present - declared)
     if undeclared:
         return Finding(
@@ -79,9 +100,10 @@ def check_allergens(declared: set[str], line_present: set[str]) -> Finding:
 
 
 class ComplianceStore:
-    def __init__(self, db_path: str, audit_path: str | None = None):
+    def __init__(self, db_path: str, audit_path: str | None = None, taxonomy=None):
         self.db_path = db_path
         self.audit_path = audit_path
+        self.taxonomy = taxonomy
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -107,7 +129,7 @@ class ComplianceStore:
         declared = {r["allergen"] for r in self._query(Q_DECLARED, (b["product_code"],))}
         line = {r["allergen"] for r in self._query(Q_LINE, (b["line_id"],))}
 
-        findings = [check_temperature(temps), check_allergens(declared, line)]
+        findings = [check_temperature(temps), check_allergens(declared, line, self.taxonomy)]
         v = Verdict(batch_id, b["product_code"], all(f.passed for f in findings), findings)
         self._audit(v)
         return v
@@ -165,8 +187,8 @@ def seed_demo(db_path: str) -> None:
           ('PROD-A','Milk'),('PROD-B','Milk'),('PROD-C','Gluten');
 
         INSERT INTO line_allergens VALUES
-          ('LINE-1','Milk'),
-          ('LINE-2','Gluten'),('LINE-2','Peanuts');
+          ('LINE-1','Lactose'),
+          ('LINE-2','Barley'),('LINE-2','Peanuts');
         """
     )
     conn.commit()

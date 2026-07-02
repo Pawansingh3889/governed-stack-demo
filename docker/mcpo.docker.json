@@ -36,6 +36,7 @@
       "env": {
         "COMPLIANCE_DB": "/app/data/compliance/demo.db",
         "COMPLIANCE_AUDIT": "/app/logs/compliance-audit.jsonl",
+        "COMPLIANCE_TAXONOMY": "/app/data/compliance/allergens_full.json",
         "PYTHONPATH": "/app"
       }
     },

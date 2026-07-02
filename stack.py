@@ -135,6 +135,7 @@ def server_specs(cfg: dict[str, str]) -> dict:
         comp_env = {
             "COMPLIANCE_DB": comp_db,
             "COMPLIANCE_AUDIT": f"{ROOT.as_posix()}/logs/compliance-audit.jsonl",
+            "COMPLIANCE_TAXONOMY": f"{ROOT.as_posix()}/data/compliance/allergens_full.json",
             "PYTHONPATH": str(ROOT),
         }
         servers["compliance-check"] = {"command": py, "args": ["-m", "compliance_check.mcp_server"], "env": comp_env}
@@ -454,6 +455,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
         ghost = call("/compliance-check/batch_compliance", {"batch_id": "B-NOPE"})
         check("compliance-check fails closed on an unknown batch",
               (ghost or {}).get("compliant") is False)
+        ok = call("/compliance-check/batch_compliance", {"batch_id": "B-1001"})
+        canon = any(
+            f.get("check") == "allergen_crosscheck" and f.get("passed")
+            and "canonicalized" in f.get("detail", "")
+            for f in (ok or {}).get("findings", [])
+        )
+        check("allergen names canonicalize via the Open Food Facts taxonomy (Lactose = Milk)",
+              (ok or {}).get("compliant") is True and canon)
 
     natives = native_map(cfg)
     if "compliance-check" in natives and cfg.get("COMPLIANCE_DB"):

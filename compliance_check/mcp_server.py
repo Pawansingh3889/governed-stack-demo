@@ -6,8 +6,12 @@ computed verdicts, never raw rows, so the model can only narrate a decision the
 code already made -- and every decision lands in a hash-chained audit log.
 
 Configuration (environment):
-  COMPLIANCE_DB      SQLite path (seeded with demo data on first run if missing)
-  COMPLIANCE_AUDIT   hash-chained audit JSONL path (default: alongside the db)
+  COMPLIANCE_DB        SQLite path (seeded with demo data on first run if missing)
+  COMPLIANCE_AUDIT     hash-chained audit JSONL path (default: alongside the db)
+  COMPLIANCE_TAXONOMY  Open Food Facts allergen taxonomy JSON (default: alongside
+                       the db); allergen names on both sides of the cross-check
+                       canonicalize through it, so Lactose matches a Milk
+                       declaration and Barley is caught by Gluten
 """
 from __future__ import annotations
 
@@ -16,13 +20,15 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
+from compliance_check.allergens import AllergenTaxonomy
 from compliance_check.core import ComplianceStore, seed_demo
 
 _DB = os.environ.get("COMPLIANCE_DB", "data/compliance/demo.db")
 _AUDIT = os.environ.get("COMPLIANCE_AUDIT", str(Path(_DB).with_name("compliance-audit.jsonl")))
+_TAXONOMY = os.environ.get("COMPLIANCE_TAXONOMY", str(Path(_DB).with_name("allergens_full.json")))
 
 seed_demo(_DB)
-_store = ComplianceStore(_DB, _AUDIT)
+_store = ComplianceStore(_DB, _AUDIT, taxonomy=AllergenTaxonomy(_TAXONOMY))
 
 mcp = FastMCP("compliance-check")
 
