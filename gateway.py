@@ -140,7 +140,15 @@ async def _decide(role: str, server: str, tool: str, args: dict, spent: int) -> 
 
 @app.post("/{server}/{tool}")
 async def call_tool(server: str, tool: str, request: Request):
-    with tracer.start_as_current_span(f"{server}/{tool}") as span:
+    # Span shape follows the OpenTelemetry GenAI semantic conventions for tool
+    # execution ("execute_tool {name}", gen_ai.* attributes), so any agent
+    # observability backend groups these correctly. The gov.* attributes are the
+    # custom governance namespace carried alongside: every span answers both
+    # "what tool ran" and "who was allowed to run it, and why".
+    with tracer.start_as_current_span(f"execute_tool {server}/{tool}") as span:
+        span.set_attribute("gen_ai.operation.name", "execute_tool")
+        span.set_attribute("gen_ai.tool.type", "function")
+        span.set_attribute("gen_ai.tool.name", tool)
         span.set_attribute("gov.server", server)
         span.set_attribute("gov.tool", tool)
 
@@ -185,6 +193,8 @@ async def call_tool(server: str, tool: str, request: Request):
         span.set_attribute("gov.decision", "allow")
         span.set_attribute("gov.cache", "miss" if CACHE_TTL > 0 else "off")
         span.set_attribute("http.status_code", resp.status_code)
+        if resp.status_code >= 400:
+            span.set_attribute("error.type", str(resp.status_code))
         _audit(role, server, tool, "allow", "forwarded", status=resp.status_code)
         if CACHE_TTL > 0 and resp.status_code == 200:
             if len(_cache) >= CACHE_MAX:

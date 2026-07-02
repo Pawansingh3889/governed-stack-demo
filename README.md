@@ -43,7 +43,10 @@ flowchart TD
 Two gates per call, on purpose. The gateway authenticates the caller (token to
 role), asks OPA whether that role may call that tool with those arguments, counts
 a per-role budget, writes a tamper-evident audit record, and exports the decision
-as an OpenTelemetry span. Repeat calls can be served from a governed cache:
+as an OpenTelemetry span following the GenAI semantic conventions (`execute_tool`
+spans with `gen_ai.*` attributes, so agent-observability backends like Jaeger,
+Grafana, or Datadog group them natively, with the `gov.*` governance decision
+carried on the same span). Repeat calls can be served from a governed cache:
 exact-match on role, tool, and arguments (never embedding similarity), with a
 TTL you set to your pipeline's refresh cadence — and a hit still passes auth,
 policy, budget, and audit, so a revoked permission cuts off cached data too. Then the in-tool

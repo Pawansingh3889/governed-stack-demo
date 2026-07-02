@@ -398,8 +398,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     check("OPA cuts a role off at its data budget", budget_hit)
 
     span_file = ROOT / "logs" / "otel-spans.jsonl"
-    otel_ok = span_file.exists() and '"gov.decision"' in span_file.read_text(encoding="utf-8")
-    check("gateway exports OpenTelemetry spans for decisions", otel_ok)
+    spans = span_file.read_text(encoding="utf-8") if span_file.exists() else ""
+    otel_ok = '"gov.decision"' in spans and '"gen_ai.operation.name"' in spans and '"execute_tool ' in spans
+    check("gateway exports GenAI-convention OTel spans for decisions", otel_ok)
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
