@@ -5,7 +5,7 @@
       "budget_bytes": 100000
     },
     "analyst": {
-      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "kql-sop/*", "thread-recall/*", "compliance-check/*"],
+      "tools": ["schema-scout/*", "doc-steward/*", "sql-steward/*", "kql-sop/*", "thread-recall/*", "compliance-check/*", "gov-lake/*"],
       "budget_bytes": 2000000
     },
     "finance": {

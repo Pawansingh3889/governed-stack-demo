@@ -86,6 +86,7 @@ NATIVE_TARGETS = {
     "doc-steward": "doc_steward.mcp_server",
     "thread-recall": "thread_recall.mcp_server",
     "compliance-check": "compliance_check.mcp_server",
+    "gov-lake": "gov_lake.mcp_server",
 }
 
 
@@ -137,6 +138,15 @@ def server_specs(cfg: dict[str, str]) -> dict:
             "PYTHONPATH": str(ROOT),
         }
         servers["compliance-check"] = {"command": py, "args": ["-m", "compliance_check.mcp_server"], "env": comp_env}
+    lake_db = cfg.get("GOV_LAKE_DB", "")
+    if lake_db:
+        lake_env = {
+            "GOV_LAKE_DB": lake_db,
+            "GOV_SPANS": f"{ROOT.as_posix()}/logs/otel-spans.jsonl",
+            "GOV_VERDICTS": f"{ROOT.as_posix()}/logs/compliance-audit.jsonl",
+            "PYTHONPATH": str(ROOT),
+        }
+        servers["gov-lake"] = {"command": py, "args": ["-m", "gov_lake.mcp_server"], "env": lake_env}
 
     return servers
 
@@ -356,6 +366,8 @@ def _print_backends(cfg: dict[str, str]) -> None:
         print(f"  thread-recall: SQLite memory ({mask} on write)")
     if cfg.get("COMPLIANCE_DB"):
         print("  compliance-check: deterministic verdicts (fail-closed, hash-chain audited)")
+    if cfg.get("GOV_LAKE_DB"):
+        print("  gov-lake     : DuckDB lakehouse over the stack's own audit trail")
     ttl = cfg.get("GATEWAY_CACHE_TTL", "0")
     if ttl not in ("", "0"):
         print(f"  gateway-cache: exact-match, TTL {ttl}s (policy re-checked on every hit)")
@@ -478,6 +490,19 @@ def cmd_verify(args: argparse.Namespace) -> int:
         check("gateway serves a repeat call from the cache", code == 200 and hdrs.get("x-gov-cache") == "hit")
         code, _ = request(f"{base}/sql-steward/get_metric", {"metric": "mrr_total"}, token=tokens.get("viewer"))
         check("a cached response never bypasses policy (viewer stays denied)", code == 403)
+
+    if cfg.get("GOV_LAKE_DB"):
+        print("\ngov-lake (analytics over the stack's own audit trail)")
+        code, ratio = request(f"{base}/gov-lake/cache_hit_ratio", {"days": 1}, token=tokens.get("analyst"))
+        check("analyst reads the cache hit ratio from the lake",
+              code == 200 and (ratio or {}).get("hits", 0) >= 1)
+        code, trend = request(f"{base}/gov-lake/compliance_trend", {"days": 1}, token=tokens.get("analyst"))
+        rows = (trend or {}).get("rows", [])
+        check("compliance trend aggregates verdicts and the ledger chain verifies",
+              code == 200 and (trend or {}).get("verdict_chain_ok") is True
+              and sum(r.get("non_compliant", 0) for r in rows) >= 1)
+        code, _ = request(f"{base}/gov-lake/decision_summary", {"days": 1}, token=tokens.get("viewer"))
+        check("governance metadata is governed too (viewer denied the lake)", code == 403)
 
     # Data budget: finance has a tight budget_bytes in policy/roles.json, so a
     # short run of calls exhausts it and OPA denies further ones.

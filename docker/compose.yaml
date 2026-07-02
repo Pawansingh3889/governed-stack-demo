@@ -19,6 +19,8 @@ services:
     command: ["mcpo", "--config", "/app/mcpo.docker.json", "--port", "8766"]
     working_dir: /app
     restart: unless-stopped
+    volumes:
+      - logs:/app/logs
 
   gateway:
     build:
@@ -36,6 +38,11 @@ services:
     ports:
       - "8765:8765"
     restart: unless-stopped
+    volumes:
+      - logs:/app/logs
     depends_on:
       - opa
       - mcpo
+
+volumes:
+  logs:

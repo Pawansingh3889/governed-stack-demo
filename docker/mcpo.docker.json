@@ -38,6 +38,16 @@
         "COMPLIANCE_AUDIT": "/app/logs/compliance-audit.jsonl",
         "PYTHONPATH": "/app"
       }
+    },
+    "gov-lake": {
+      "command": "python",
+      "args": ["-m", "gov_lake.mcp_server"],
+      "env": {
+        "GOV_LAKE_DB": "/app/data/lake/gov.duckdb",
+        "GOV_SPANS": "/app/logs/otel-spans.jsonl",
+        "GOV_VERDICTS": "/app/logs/compliance-audit.jsonl",
+        "PYTHONPATH": "/app"
+      }
     }
   }
 }

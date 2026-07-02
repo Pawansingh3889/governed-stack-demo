@@ -11,12 +11,13 @@ WORKDIR /app
 
 COPY docker/wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/*.whl \
-        mcpo "mcp>=1.0" fastapi "uvicorn[standard]" httpx \
+        mcpo "mcp>=1.0" fastapi "uvicorn[standard]" httpx duckdb \
         opentelemetry-sdk opentelemetry-exporter-otlp-proto-http \
     && rm -rf /tmp/wheels
 
 COPY gateway.py ./
 COPY compliance_check ./compliance_check
+COPY gov_lake ./gov_lake
 COPY docker/mcpo.docker.json ./mcpo.docker.json
 COPY data ./data
 COPY policy ./policy

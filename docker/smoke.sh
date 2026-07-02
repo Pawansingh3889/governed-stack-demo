@@ -50,4 +50,7 @@ has "repeat call served from the governed cache" \
 ck "a cached response never bypasses policy (viewer still 403)" \
    "$(code -X POST "$B/sql-steward/get_metric" -H 'Authorization: Bearer viewer-tok' -H "$JSON" -d '{"metric":"mrr_total"}')" 403
 
+has "gov-lake aggregates the shared audit trail (analyst)" \
+    "$(curl -s -X POST "$B/gov-lake/cache_hit_ratio" -H 'Authorization: Bearer analyst-tok' -H "$JSON" -d '{"days":1}')" '"hits"'
+
 echo "$pass passed, $fail failed"

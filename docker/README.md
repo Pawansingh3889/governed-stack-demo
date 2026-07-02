@@ -20,7 +20,7 @@ and copies straight in):
 # from the repo root
 bash docker/build-wheels.sh                       # builds docker/wheels/*.whl
 docker compose -f docker/compose.yaml up --build -d
-bash docker/smoke.sh                              # 12 governance checks through the gateway
+bash docker/smoke.sh                              # 13 governance checks through the gateway
 ```
 
 `smoke.sh` confirms both layers in the containers: an unauthenticated call is
